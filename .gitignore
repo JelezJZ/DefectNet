@@ -1,0 +1,292 @@
+# .gitignore для проекта обнаружения дефектов
+
+# ============================================
+# Python
+# ============================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.pytest_cache/
+
+# ============================================
+# Jupyter Notebook
+# ============================================
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+# Можно сохранить notebooks, но очистить output:
+# *.ipynb
+
+# ============================================
+# Данные и модели (ВАЖНО!)
+# ============================================
+# Сырые данные - обычно слишком большие для git
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Обученные модели - большие файлы
+models/*.pt
+models/*.pth
+models/*.h5
+models/*.onnx
+models/*.pb
+models/weights/*
+models/checkpoints/*
+!models/.gitkeep
+!models/README.md
+
+# Датасеты
+*.zip
+*.tar
+*.tar.gz
+*.rar
+datasets/
+data/downloads/
+
+# Аннотации можно сохранить, если небольшие
+# data/annotations/*
+
+# ============================================
+# ML Frameworks
+# ============================================
+# PyTorch
+*.pth
+*.pkl
+*.pickle
+
+# TensorFlow
+*.ckpt
+*.index
+*.meta
+events.out.tfevents.*
+
+# ONNX
+*.onnx
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# Weights & Biases
+wandb/
+
+# DVC (если используете)
+.dvc/
+
+# ============================================
+# IDE и редакторы
+# ============================================
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# ============================================
+# Операционная система
+# ============================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+Desktop.ini
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# ============================================
+# Docker
+# ============================================
+# Логи Docker
+*.log
+
+# Docker volumes (если есть)
+docker-volumes/
+
+# ============================================
+# Node.js / Frontend (если используете)
+# ============================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn/
+package-lock.json
+yarn.lock
+
+# Build outputs
+frontend/dist/
+frontend/build/
+*.bundle.js
+*.bundle.js.map
+
+# ============================================
+# База данных
+# ============================================
+*.db
+*.sqlite
+*.sqlite3
+db.sqlite3
+
+# PostgreSQL
+*.sql
+*.dump
+
+# ============================================
+# Логи и временные файлы
+# ============================================
+logs/
+*.log
+temp/
+tmp/
+cache/
+
+# ============================================
+# Результаты и outputs
+# ============================================
+# Результаты экспериментов (большие)
+results/
+outputs/
+runs/
+experiments/
+!results/.gitkeep
+
+# Визуализации (если генерируются автоматически)
+# plots/
+# figures/
+
+# ============================================
+# Конфигурационные файлы с секретами
+# ============================================
+# Переменные окружения
+.env
+.env.local
+.env.*.local
+*.env
+
+# Конфиги с ключами API
+config/secrets.yaml
+config/credentials.json
+secrets/
+*.key
+*.pem
+
+# AWS
+.aws/
+
+# ============================================
+# Документация (build)
+# ============================================
+docs/_build/
+docs/.doctrees/
+site/
+
+# ============================================
+# Backup файлы
+# ============================================
+*.bak
+*.backup
+*.old
+*.orig
+
+# ============================================
+# Специфичные для проекта
+# ============================================
+# Большие изображения для тестирования
+test_images/large/
+samples/high_res/
+
+# Экспортированные отчёты
+reports/*.pdf
+reports/*.docx
+
+# Кэш предобработки
+preprocessed_cache/
+augmented_cache/
+
+# ============================================
+# Сохранить важные файлы
+# ============================================
+# Оставьте пустые директории с .gitkeep
+!.gitkeep
+
+# Примеры конфигов (без секретов)
+!config/config.example.yaml
+!.env.example

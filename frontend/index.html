@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Defect Detection</title>
+    <style>
+        body { 
+            font-family: Arial; 
+            max-width: 800px; 
+            margin: 50px auto; 
+            padding: 20px;
+        }
+        #preview { 
+            max-width: 100%; 
+            margin: 20px 0;
+        }
+        .result { 
+            background: #f0f0f0; 
+            padding: 15px; 
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 Defect Detection System</h1>
+    
+    <input type="file" id="imageInput" accept="image/*">
+    <button onclick="detectDefects()">Analyze</button>
+    
+    <img id="preview" style="display:none">
+    <div id="results"></div>
+
+    <script>
+        const imageInput = document.getElementById('imageInput');
+        const preview = document.getElementById('preview');
+        
+        imageInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            preview.src = URL.createObjectURL(file);
+            preview.style.display = 'block';
+        });
+
+        async function detectDefects() {
+            const file = imageInput.files[0];
+            if (!file) {
+                alert('Please select an image');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const response = await fetch('http://localhost:8000/detect', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+            displayResults(data);
+        }
+
+        function displayResults(data) {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = `
+                <h2>Results: ${data.count} defects found</h2>
+                ${data.detections.map(d => `
+                    <div class="result">
+                        <strong>${d.class}</strong> 
+                        (confidence: ${(d.confidence * 100).toFixed(1)}%)
+                    </div>
+                `).join('')}
+            `;
+        }
+    </script>
+</body>
+</html>
