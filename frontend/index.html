@@ -1,3 +1,4 @@
+<!-- frontend/index.html -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -5,13 +6,28 @@
     <style>
         body { 
             font-family: Arial; 
-            max-width: 800px; 
+            max-width: 900px; 
             margin: 50px auto; 
             padding: 20px;
         }
-        #preview { 
-            max-width: 100%; 
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
             margin: 20px 0;
+        }
+        .image-box {
+            border: 2px solid #ddd;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .image-box h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        img { 
+            max-width: 100%; 
+            border-radius: 5px;
         }
         .result { 
             background: #f0f0f0; 
@@ -26,26 +42,62 @@
             border: none;
             border-radius: 5px;
             cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        #loading {
+            display: none;
+            color: #007bff;
+            margin: 10px 0;
         }
     </style>
 </head>
 <body>
     <h1>🔍 Defect Detection System</h1>
     
-    <input type="file" id="imageInput" accept="image/*">
-    <button onclick="detectDefects()">Analyze</button>
+    <div class="controls">
+        <input type="file" id="imageInput" accept="image/*">
+        <button onclick="detectDefects()" id="analyzeBtn">Analyze</button>
+        <div id="loading">⏳ Processing...</div>
+    </div>
     
-    <img id="preview" style="display:none">
+    <div class="container">
+        <div class="image-box">
+            <h3>Original Image</h3>
+            <img id="originalPreview" style="display:none">
+        </div>
+        <div class="image-box">
+            <h3>Detection Results</h3>
+            <img id="resultPreview" style="display:none">
+        </div>
+    </div>
+    
     <div id="results"></div>
 
     <script>
         const imageInput = document.getElementById('imageInput');
-        const preview = document.getElementById('preview');
+        const originalPreview = document.getElementById('originalPreview');
+        const resultPreview = document.getElementById('resultPreview');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const loading = document.getElementById('loading');
         
         imageInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
-            preview.src = URL.createObjectURL(file);
-            preview.style.display = 'block';
+            if (file) {
+                originalPreview.src = URL.createObjectURL(file);
+                originalPreview.style.display = 'block';
+                resultPreview.style.display = 'none';
+                document.getElementById('results').innerHTML = '';
+            }
         });
 
         async function detectDefects() {
@@ -55,28 +107,47 @@
                 return;
             }
 
+            // Показываем индикатор загрузки
+            loading.style.display = 'block';
+            analyzeBtn.disabled = true;
+
             const formData = new FormData();
             formData.append('file', file);
 
-            const response = await fetch('http://localhost:8000/detect', {
-                method: 'POST',
-                body: formData
-            });
+            try {
+                const response = await fetch('http://localhost:8000/detect', {
+                    method: 'POST',
+                    body: formData
+                });
 
-            const data = await response.json();
-            displayResults(data);
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const imageUrl = URL.createObjectURL(blob);
+                    
+                    resultPreview.src = imageUrl;
+                    resultPreview.style.display = 'block';
+                    
+                    // Можно добавить дополнительный вызов для получения JSON с деталями
+                    displaySuccess();
+                } else {
+                    alert('Error processing image');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error connecting to server');
+            } finally {
+                loading.style.display = 'none';
+                analyzeBtn.disabled = false;
+            }
         }
 
-        function displayResults(data) {
+        function displaySuccess() {
             const resultsDiv = document.getElementById('results');
             resultsDiv.innerHTML = `
-                <h2>Results: ${data.count} defects found</h2>
-                ${data.detections.map(d => `
-                    <div class="result">
-                        <strong>${d.class}</strong> 
-                        (confidence: ${(d.confidence * 100).toFixed(1)}%)
-                    </div>
-                `).join('')}
+                <div class="result">
+                    ✅ <strong>Detection completed successfully!</strong><br>
+                    Check the image on the right to see detected defects.
+                </div>
             `;
         }
     </script>
