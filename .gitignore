@@ -91,6 +91,9 @@ models/checkpoints/*
 datasets/
 data/downloads/
 
+# Файлы загруженных изображений и предсказаний по ним
+storage/
+
 # Аннотации можно сохранить, если небольшие
 # data/annotations/*
 

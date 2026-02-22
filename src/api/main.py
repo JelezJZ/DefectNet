@@ -1,17 +1,16 @@
-# src/api/main.py
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from ultralytics import YOLO
 import cv2
 import numpy as np
 from pathlib import Path
-import io
-from PIL import Image
 import uuid
 from datetime import datetime
-from typing import List, Optional
-import json
+from typing import List
+from src.database.models import SessionLocal, Inspection, DefectStatistics
+import time
+from sqlalchemy.orm import Session
 
 app = FastAPI(
     title="PCB Defect Detection API",
@@ -30,8 +29,11 @@ app.add_middleware(
 
 # Глобальная переменная для модели
 model = None
-UPLOAD_DIR = Path("uploads")
-RESULTS_DIR = Path("results")
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+STORAGE_DIR = BASE_DIR / "storage"
+UPLOAD_DIR = STORAGE_DIR / "uploads"
+RESULTS_DIR = STORAGE_DIR / "results"
 
 UPLOAD_DIR.mkdir(exist_ok=True)
 RESULTS_DIR.mkdir(exist_ok=True)
@@ -70,11 +72,36 @@ DEFECT_INFO = {
     }
 }
 
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+def preprocess(img):
+    """
+    Улучшает контрастность и выравнивает освещение (CLAHE), 
+    чтобы приблизить реальное фото к лабораторному датасету.
+    """
+    # Переходим в пространство LAB (L - яркость, A и B - цвета)
+    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    
+    # Применяем адаптивное выравнивание гистограммы к каналу яркости
+    clahe = cv2.createCLAHE(clipLimit=1.2, tileGridSize=(8,8))
+    cl = clahe.apply(l)
+    
+    # Собираем каналы обратно и конвертируем в BGR
+    limg = cv2.merge((cl, a, b))
+    processed_img = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
+    return processed_img
+
 @app.on_event("startup")
 async def load_model():
     """Загрузите модель при старте приложения"""
     global model
-    model_path = "../models/best.pt"
+    model_path = "src/models/best.pt"
     
     if not Path(model_path).exists():
         raise RuntimeError(f"Model not found at {model_path}")
@@ -104,7 +131,8 @@ async def health_check():
 async def detect_defects(
     file: UploadFile = File(...),
     confidence: float = 0.25,
-    save_image: bool = True
+    save_image: bool = True,
+    db: Session = Depends(get_db)  # Добавляем зависимость БД
 ):
     """
     Основной endpoint для детекции дефектов
@@ -114,6 +142,8 @@ async def detect_defects(
         confidence: Порог уверенности (0.0-1.0)
         save_image: Сохранять ли изображение с результатами
     """
+
+    start_time = time.time()
     
     if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
@@ -125,14 +155,28 @@ async def detect_defects(
     try:
         # Прочитайте изображение
         contents = await file.read()
+
+        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        unique_id = uuid.uuid4().hex[:8]
+        # Сохраняем расширение оригинального файла
+        extension = Path(file.filename).suffix or ".jpg"
+        upload_filename = f"upload_{timestamp_str}_{unique_id}{extension}"
+        upload_path = UPLOAD_DIR / upload_filename
+        
+        # Записываем байты из памяти на диск
+        with open(upload_path, "wb") as f:
+            f.write(contents)
+
         nparr = np.frombuffer(contents, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
         if img is None:
             raise HTTPException(status_code=400, detail="Invalid image file")
         
+        # img = preprocess(img)
+        
         # Запустите детекцию
-        results = model(img, conf=confidence)
+        results = model(img, conf=confidence, imgsz=1024, iou=0.45, augment=True)
         
         # Обработайте результаты
         detections = []
@@ -207,6 +251,55 @@ async def detect_defects(
             },
             'result_image': f"/results/{result_filename}" if result_image_path else None
         }
+
+        try:
+            inspection = Inspection(
+                id=response['inspection_id'],
+                timestamp=datetime.now(),
+                filename=file.filename,
+                image_width=img.shape[1],
+                image_height=img.shape[0],
+                confidence_threshold=confidence,
+                total_defects=total_defects,
+                status=inspection_status,
+                severity_breakdown=severity_counts, # Убедись, что в модели это JSON тип
+                detections=detections,              # Убедись, что в модели это JSON тип
+                result_image_path=str(result_image_path) if result_image_path else None,
+                processing_time=time.time() - start_time
+            )
+            
+            db.add(inspection)
+
+            # Группируем детекции из текущего запроса по типам
+            stats_map = {} # { 'missing_component': {'count': 0, 'total_conf': 0.0} }
+            
+            for det in detections:
+                d_type = det['class']
+                conf = det['confidence']
+                if d_type not in stats_map:
+                    stats_map[d_type] = {'count': 0, 'total_conf': 0.0}
+                stats_map[d_type]['count'] += 1
+                stats_map[d_type]['total_conf'] += conf
+
+            # Записываем агрегированные данные в БД
+            for d_type, data in stats_map.items():
+                # Ищем, есть ли уже статистика по этому типу за сегодня (опционально)
+                # Или просто добавляем новую запись для каждой инспекции:
+                stat_entry = DefectStatistics(
+                    date=datetime.now(),
+                    defect_type=d_type,
+                    count=data['count'],
+                    avg_confidence=data['total_conf'] / data['count']
+                )
+                db.add(stat_entry)
+
+            db.commit()
+            db.refresh(inspection) # Обновляем объект из базы
+        except Exception as db_error:
+            db.rollback()
+            print(f"Database error: {db_error}")
+            # Мы не выбрасываем HTTPException здесь, чтобы пользователь 
+            # все равно получил результат детекции, даже если БД "упала"
         
         return JSONResponse(content=response)
     
@@ -275,6 +368,71 @@ async def get_statistics():
         'pass_rate': 0.0
     }
 
+# Новый endpoint для истории
+@app.get("/history")
+async def get_history(limit: int = 50, offset: int = 0, db: Session = Depends(get_db)):
+    """Получите историю проверок"""
+
+    inspections = db.query(Inspection)\
+        .order_by(Inspection.timestamp.desc())\
+        .limit(limit)\
+        .offset(offset)\
+        .all()
+    
+    return {
+        'total': db.query(Inspection).count(),
+        'limit': limit,
+        'offset': offset,
+        'inspections': [
+            {
+                'id': i.id,
+                'timestamp': i.timestamp.isoformat(),
+                'filename': i.filename,
+                'total_defects': i.total_defects,
+                'status': i.status
+            }
+            for i in inspections
+        ]
+    }
+
+# Endpoint для детальной статистики
+@app.get("/analytics/dashboard")
+async def get_analytics(db: Session = Depends(get_db)):
+    """Дашборд с аналитикой"""
+
+    total_inspections = db.query(Inspection).count()
+    
+    # Дефекты по типам
+    all_inspections = db.query(Inspection).all()
+    defect_counts = {}
+    
+    for insp in all_inspections:
+        if insp.detections:
+            for det in insp.detections:
+                defect_type = det.get('class')
+                defect_counts[defect_type] = defect_counts.get(defect_type, 0) + 1
+    
+    # Pass rate
+    passed = db.query(Inspection).filter(Inspection.status == 'passed').count()
+    pass_rate = (passed / total_inspections * 100) if total_inspections > 0 else 0
+    
+    return {
+        'total_inspections': total_inspections,
+        'total_defects_found': sum(defect_counts.values()),
+        'defect_breakdown': defect_counts,
+        'pass_rate': round(pass_rate, 2),
+        'status_breakdown': {
+            'passed': db.query(Inspection).filter(Inspection.status == 'passed').count(),
+            'warning': db.query(Inspection).filter(Inspection.status == 'warning').count(),
+            'failed': db.query(Inspection).filter(Inspection.status == 'failed').count()
+        }
+    }
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("src.api.main:app", host="0.0.0.0", port=8000, reload=True)
+    
+    # Команда запуска:
+    # export PYTHONPATH=$PYTHONPATH:$(pwd)/src  # Для Linux/macOS
+    # или для Windows (PowerShell): $env:PYTHONPATH += ";$pwd\src"=
+    # python -m src.api.main
