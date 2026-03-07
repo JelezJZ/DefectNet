@@ -46,13 +46,10 @@ venv.bak/
 htmlcov/
 .tox/
 .nox/
-.coverage
-.coverage.*
 .cache
 nosetests.xml
 coverage.xml
 *.cover
-*.log
 .pytest_cache/
 
 # ============================================
@@ -72,9 +69,13 @@ data/processed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 
-# Обученные модели - большие файлы
+# Обученные модели - большие файлы (игнорируем новые)
+# Примечание: уже закоммиченные файлы нужно удалить вручную: git rm --cached
 models/*.pt
+models/**/*.pt
+src/models/*.pt
 models/*.pth
+models/**/*.pth
 models/*.h5
 models/*.onnx
 models/*.pb
@@ -82,8 +83,9 @@ models/weights/*
 models/checkpoints/*
 !models/.gitkeep
 !models/README.md
+!models/pretrained/README.md
 
-# Датасеты
+# Датасеты (игнорируем только большие архивы и кэш)
 *.zip
 *.tar
 *.tar.gz
@@ -176,9 +178,6 @@ Desktop.ini
 # ============================================
 # Docker
 # ============================================
-# Логи Docker
-*.log
-
 # Docker volumes (если есть)
 docker-volumes/
 
@@ -216,7 +215,6 @@ db.sqlite3
 # Логи и временные файлы
 # ============================================
 logs/
-*.log
 temp/
 tmp/
 cache/
@@ -227,9 +225,12 @@ cache/
 # Результаты экспериментов (большие)
 results/
 outputs/
-runs/
 experiments/
-!results/.gitkeep
+
+# YOLO training runs (игнорируем, кроме важных)
+runs/
+!runs/.gitkeep
+!runs/README.md
 
 # Визуализации (если генерируются автоматически)
 # plots/
