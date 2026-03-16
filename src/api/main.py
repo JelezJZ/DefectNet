@@ -11,6 +11,8 @@ from typing import List
 from src.database.models import SessionLocal, Inspection, DefectStatistics
 import time
 from sqlalchemy.orm import Session
+from src.reports.generator import ReportGenerator
+import os
 
 app = FastAPI(
     title="PCB Defect Detection API",
@@ -79,24 +81,6 @@ def get_db():
     finally:
         db.close()
 
-def preprocess(img):
-    """
-    Улучшает контрастность и выравнивает освещение (CLAHE), 
-    чтобы приблизить реальное фото к лабораторному датасету.
-    """
-    # Переходим в пространство LAB (L - яркость, A и B - цвета)
-    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-    l, a, b = cv2.split(lab)
-    
-    # Применяем адаптивное выравнивание гистограммы к каналу яркости
-    clahe = cv2.createCLAHE(clipLimit=1.2, tileGridSize=(8,8))
-    cl = clahe.apply(l)
-    
-    # Собираем каналы обратно и конвертируем в BGR
-    limg = cv2.merge((cl, a, b))
-    processed_img = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
-    return processed_img
-
 @app.on_event("startup")
 async def load_model():
     """Загрузите модель при старте приложения"""
@@ -132,7 +116,7 @@ async def detect_defects(
     file: UploadFile = File(...),
     confidence: float = 0.25,
     save_image: bool = True,
-    db: Session = Depends(get_db)  # Добавляем зависимость БД
+    db: Session = Depends(get_db)
 ):
     """
     Основной endpoint для детекции дефектов
@@ -141,6 +125,7 @@ async def detect_defects(
         file: Изображение печатной платы
         confidence: Порог уверенности (0.0-1.0)
         save_image: Сохранять ли изображение с результатами
+        db: Зависимость БД
     """
 
     start_time = time.time()
@@ -153,7 +138,7 @@ async def detect_defects(
         raise HTTPException(status_code=400, detail="File must be an image")
     
     try:
-        # Прочитайте изображение
+        # Читаем изображение
         contents = await file.read()
 
         timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -173,12 +158,10 @@ async def detect_defects(
         if img is None:
             raise HTTPException(status_code=400, detail="Invalid image file")
         
-        # img = preprocess(img)
-        
-        # Запустите детекцию
+        # Запускаем детекцию
         results = model(img, conf=confidence, imgsz=1024, iou=0.45, augment=True)
         
-        # Обработайте результаты
+        # Обрабатываем результаты
         detections = []
         total_defects = 0
         severity_counts = {'critical': 0, 'medium': 0, 'low': 0}
@@ -211,19 +194,19 @@ async def detect_defects(
                 total_defects += 1
                 severity_counts[severity] = severity_counts.get(severity, 0) + 1
         
-        # Сохраните изображение с результатами
+        # Сохраняем изображение с результатами
         result_image_path = None
         if save_image and len(detections) > 0:
             result_img = results[0].plot()
             
-            # Генерируйте уникальное имя
+            # Генерируем уникальное имя
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             result_filename = f"result_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
             result_image_path = RESULTS_DIR / result_filename
             
             cv2.imwrite(str(result_image_path), result_img)
         
-        # Определите статус проверки
+        # Определяем статус проверки
         inspection_status = "passed"
         if severity_counts.get('critical', 0) > 0:
             inspection_status = "failed"
@@ -262,8 +245,8 @@ async def detect_defects(
                 confidence_threshold=confidence,
                 total_defects=total_defects,
                 status=inspection_status,
-                severity_breakdown=severity_counts, # Убедись, что в модели это JSON тип
-                detections=detections,              # Убедись, что в модели это JSON тип
+                severity_breakdown=severity_counts,
+                detections=detections,
                 result_image_path=str(result_image_path) if result_image_path else None,
                 processing_time=time.time() - start_time
             )
@@ -298,8 +281,6 @@ async def detect_defects(
         except Exception as db_error:
             db.rollback()
             print(f"Database error: {db_error}")
-            # Мы не выбрасываем HTTPException здесь, чтобы пользователь 
-            # все равно получил результат детекции, даже если БД "упала"
         
         return JSONResponse(content=response)
     
@@ -320,7 +301,7 @@ async def batch_detect(
     
     for file in files:
         try:
-            # Вызовите обычный detect для каждого файла
+            # Вызываем обычный detect для каждого файла
             result = await detect_defects(file, confidence, save_image=False)
             results_list.append({
                 'filename': file.filename,
@@ -368,7 +349,6 @@ async def get_statistics():
         'pass_rate': 0.0
     }
 
-# Новый endpoint для истории
 @app.get("/history")
 async def get_history(limit: int = 50, offset: int = 0, db: Session = Depends(get_db)):
     """Получите историю проверок"""
@@ -395,7 +375,6 @@ async def get_history(limit: int = 50, offset: int = 0, db: Session = Depends(ge
         ]
     }
 
-# Endpoint для детальной статистики
 @app.get("/analytics/dashboard")
 async def get_analytics(db: Session = Depends(get_db)):
     """Дашборд с аналитикой"""
@@ -427,6 +406,42 @@ async def get_analytics(db: Session = Depends(get_db)):
             'failed': db.query(Inspection).filter(Inspection.status == 'failed').count()
         }
     }
+
+@app.get("/export/pdf/{inspection_id}")
+async def export_pdf_report(inspection_id: str, db: Session = Depends(get_db)):
+    """Экспорт отчёта в PDF"""
+
+    output_dir = "reports"
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
+    
+    if not inspection:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+    
+    # Преобразовываем в формат для отчёта
+    report_data = {
+        'inspection_id': inspection.id,
+        'timestamp': inspection.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+        'image_info': {
+            'filename': inspection.filename,
+            'width': inspection.image_width,
+            'height': inspection.image_height
+        },
+        'results': {
+            'status': inspection.status,
+            'total_defects': inspection.total_defects,
+            'detections': inspection.detections
+        }
+    }
+    
+    # Генерируем PDF
+    output_path = f"reports/inspection_{inspection_id}.pdf"
+    generator = ReportGenerator()
+    generator.generate_inspection_report(report_data, output_path)
+    
+    return FileResponse(output_path, filename=f"report_{inspection_id}.pdf")
 
 if __name__ == "__main__":
     import uvicorn

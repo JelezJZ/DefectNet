@@ -1,4 +1,3 @@
-# src/database/models.py
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, JSON, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -17,7 +16,7 @@ class Inspection(Base):
     image_height = Column(Integer)
     confidence_threshold = Column(Float)
     total_defects = Column(Integer)
-    status = Column(String)  # passed, warning, failed
+    status = Column(String)
     severity_breakdown = Column(JSON)
     detections = Column(JSON)
     result_image_path = Column(String, nullable=True)
