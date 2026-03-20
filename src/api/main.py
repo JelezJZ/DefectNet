@@ -8,11 +8,12 @@ from pathlib import Path
 import uuid
 from datetime import datetime
 from typing import List
-from src.database.models import SessionLocal, Inspection, DefectStatistics
+from src.database.models import Inspection, DefectStatistics, get_db
 import time
 from sqlalchemy.orm import Session
 from src.reports.generator import ReportGenerator
 import os
+from src.api.auth_routes import router as auth_router
 
 app = FastAPI(
     title="PCB Defect Detection API",
@@ -28,6 +29,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth_router)
 
 # Глобальная переменная для модели
 model = None
@@ -73,13 +76,6 @@ DEFECT_INFO = {
         'description': 'Остатки меди на плате'
     }
 }
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 @app.on_event("startup")
 async def load_model():
