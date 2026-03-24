@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-time Dashboard - PCB Defect Detection</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="css/dashboard_style.css">
+</head>
+<body>
+    <div class="dashboard">
+        <div class="header">
+            <h1>📊 Real-time Dashboard</h1>
+            <p>
+                <span class="status-indicator status-online"></span>
+                Подключено к серверу
+            </p>
+        </div>
+
+        <div class="card">
+            <h3>Всего проверок</h3>
+            <div class="metric">
+                <div class="metric-value" id="totalInspections">0</div>
+                <div class="metric-label">Все время</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Обнаружены дефекты</h3>
+            <div class="metric">
+                <div class="metric-value" id="totalDefects">0</div>
+                <div class="metric-label">Всего дефектов</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Проходной балл</h3>
+            <div class="metric">
+                <div class="metric-value" id="passRate">0%</div>
+                <div class="metric-label">Уровень успеха</div>
+            </div>
+        </div>
+
+        <div class="card grid-2">
+            <h3>Дефекты по типу</h3>
+            <div class="chart-container">
+                <canvas id="defectsChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card grid-2">
+            <h3>График проверок</h3>
+            <div class="chart-container">
+                <canvas id="timelineChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card grid-2">
+            <h3>Недавняя активность</h3>
+            <div class="activity-feed" id="activityFeed">
+            </div>
+        </div>
+    </div>
+    
+    <script src="js/dashboard_script.js"></script>
+</body>
+</html>
