@@ -11,7 +11,7 @@ Base = declarative_base()
 class User(Base):
     """Модель пользователя"""
     __tablename__ = 'users'
-    
+
     id = Column(String, primary_key=True)
     username = Column(String, unique=True, nullable=False)
     email = Column(String, unique=True, nullable=False)
@@ -19,7 +19,7 @@ class User(Base):
     full_name = Column(String)
     role = Column(String, default='operator')  # admin, supervisor, operator
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=datetime.now)
     last_login = Column(DateTime, nullable=True)
     
     # Связь с проверками

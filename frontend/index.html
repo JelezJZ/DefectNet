@@ -7,70 +7,267 @@
     <link rel="stylesheet" href="css/index_style.css">
 </head>
 <body>
+    <!-- Navbar -->
+    <div class="navbar">
+        <div class="navbar-brand">🔍 PCB Defect Detection</div>
+        <ul class="navbar-menu">
+            <li><a href="#" class="active" onclick="switchPage('detection')">Detection</a></li>
+            <li><a href="#" onclick="switchPage('batch')">Batch Processing</a></li>
+            <li><a href="#" onclick="switchPage('history')">History</a></li>
+            <li><a href="#" onclick="switchPage('models')">Models</a></li>
+            <li><a href="#" onclick="switchPage('analytics')">Analytics</a></li>
+        </ul>
+        <div class="user-menu">
+            <div class="user-avatar" id="userAvatar">U</div>
+            <span id="username">Guest</span>
+            <button class="btn btn-secondary" onclick="logout()" id="logoutBtn" style="display: none; padding: 8px 20px; margin: 0;">Logout</button>
+            <button class="btn" onclick="showLoginForm()" id="loginBtn" style="padding: 8px 20px; margin: 0;">Login</button>
+        </div>
+    </div>
+
     <div class="container">
-        <div class="header">
-            <h1>🔍 PCB Defect Detection System</h1>
-            <p>Автоматическое обнаружение дефектов печатных плат с помощью AI</p>
+        <!-- Login Form (скрыт по умолчанию) -->
+        <div id="loginFormContainer" style="display: none;">
+            <div class="login-form">
+                <h2 style="text-align: center; color: #667eea; margin-bottom: 30px;">Login</h2>
+                <div id="loginAlert"></div>
+                <form onsubmit="handleLogin(event)">
+                    <div class="form-group">
+                        <label>Username</label>
+                        <input type="text" id="loginUsername" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <input type="password" id="loginPassword" required>
+                    </div>
+                    <button type="submit" class="btn" style="width: 100%;">Login</button>
+                    <p style="text-align: center; margin-top: 15px;">
+                        Don't have an account? 
+                        <a href="#" onclick="showRegisterForm()" style="color: #667eea;">Register</a>
+                    </p>
+                </form>
+            </div>
         </div>
 
-        <div class="main">
-            <!-- Секция загрузки -->
-            <div class="upload-section" id="uploadSection">
-                <div class="upload-icon">📁</div>
-                <h2>Загрузите изображение печатной платы</h2>
-                <p style="margin: 20px 0; color: #666;">
-                    Перетащите файл сюда или нажмите для выбора
-                </p>
-                <input type="file" id="fileInput" class="file-input" accept="image/*">
-                <button class="btn" onclick="document.getElementById('fileInput').click()">
-                    Выбрать файл
+        <!-- Register Form (скрыт по умолчанию) -->
+        <div id="registerFormContainer" style="display: none;">
+            <div class="login-form">
+                <h2 style="text-align: center; color: #667eea; margin-bottom: 30px;">Register</h2>
+                <div id="registerAlert"></div>
+                <form onsubmit="handleRegister(event)">
+                    <div class="form-group">
+                        <label>Username</label>
+                        <input type="text" id="regUsername" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input type="email" id="regEmail" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Full Name</label>
+                        <input type="text" id="regFullName" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <input type="password" id="regPassword" required>
+                    </div>
+                    <button type="submit" class="btn" style="width: 100%;">Register</button>
+                    <p style="text-align: center; margin-top: 15px;">
+                        Already have an account? 
+                        <a href="#" onclick="showLoginForm()" style="color: #667eea;">Login</a>
+                    </p>
+                </form>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div id="mainContent">
+            <!-- Tabs -->
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('single')">
+                    📷 Single Detection
+                </button>
+                <button class="tab" onclick="switchTab('batch')">
+                    📁 Batch Processing
+                </button>
+                <button class="tab" onclick="switchTab('history')">
+                    📜 History
+                </button>
+                <button class="tab" onclick="switchTab('compare')">
+                    🔬 Model Comparison
                 </button>
             </div>
 
-            <!-- Контролы -->
-            <div class="controls" style="display: none;" id="controls">
-                <div class="slider-container">
-                    <label for="confidenceSlider">
-                        Порог уверенности: <span id="confidenceValue">0.25</span>
-                    </label>
-                    <input type="range" id="confidenceSlider" class="slider" 
-                           min="0" max="1" step="0.05" value="0.25">
+            <!-- Tab 1: Single Detection -->
+            <div id="tabSingle" class="tab-content active">
+                <div class="upload-section" id="uploadSection">
+                    <div class="upload-icon">📁</div>
+                    <h2>Upload PCB Image</h2>
+                    <p style="margin: 20px 0; color: #666;">
+                        Drag and drop file here or click to select
+                    </p>
+                    <input type="file" id="fileInput" class="file-input" accept="image/*">
+                    <button class="btn" onclick="document.getElementById('fileInput').click()">
+                        Select File
+                    </button>
                 </div>
-                <button class="btn" id="analyzeBtn">🔍 Анализировать</button>
-                <button class="btn" onclick="reset()" style="background: #6c757d;">
-                    🔄 Новая проверка
-                </button>
+
+                <div class="controls" style="display: none;" id="controls">
+                    <div class="slider-container">
+                        <label for="confidenceSlider">
+                            Confidence Threshold: <span id="confidenceValue">0.25</span>
+                        </label>
+                        <input type="range" id="confidenceSlider" class="slider" 
+                               min="0" max="1" step="0.05" value="0.25">
+                    </div>
+                    <button class="btn" id="analyzeBtn">🔍 Analyze</button>
+                    <button class="btn btn-secondary" onclick="reset()">
+                        🔄 New Inspection
+                    </button>
+                    <button class="btn btn-success" onclick="exportPDF()" id="exportBtn" style="display: none;">
+                        📄 Export PDF
+                    </button>
+                </div>
+
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <h3>Analyzing image...</h3>
+                    <p>This may take a few seconds</p>
+                </div>
+
+                <div class="preview-section" id="previewSection">
+                    <div class="image-preview">
+                        <h3>📷 Original Image</h3>
+                        <img id="originalImage" alt="Original">
+                    </div>
+                    <div class="image-preview">
+                        <h3>✨ Analysis Result</h3>
+                        <img id="resultImage" alt="Result">
+                    </div>
+                </div>
+
+                <div class="results-section" id="resultsSection">
+                    <h2 style="margin-bottom: 20px;">📊 Inspection Results</h2>
+                    
+                    <div id="statusBadge"></div>
+                    <div class="stats-grid" id="statsGrid"></div>
+                    <h3 style="margin: 30px 0 15px;">🔎 Detected Defects</h3>
+                    <div id="defectsList"></div>
+                </div>
             </div>
 
-            <!-- Загрузка -->
-            <div class="loading" id="loading">
-                <div class="spinner"></div>
-                <h3>Анализируем изображение...</h3>
-                <p>Это может занять несколько секунд</p>
+            <!-- Tab 2: Batch Processing -->
+            <div id="tabBatch" class="tab-content">
+                <h2>Batch Processing</h2>
+                <p style="color: #666; margin-bottom: 20px;">Upload multiple images for processing</p>
+
+                <div class="upload-section" id="batchUploadSection">
+                    <div class="upload-icon">📁</div>
+                    <h3>Select Multiple Images</h3>
+                    <input type="file" id="batchFileInput" class="file-input" accept="image/*" multiple>
+                    <button class="btn" onclick="document.getElementById('batchFileInput').click()">
+                        Select Files
+                    </button>
+                </div>
+
+                <div id="batchFilesContainer" style="display: none;">
+                    <h3>Selected Files (<span id="batchFileCount">0</span>)</h3>
+                    <div class="batch-files-list" id="batchFilesList"></div>
+                    
+                    <div style="margin-top: 20px;">
+                        <button class="btn" onclick="processBatch()">
+                            🚀 Process All
+                        </button>
+                        <button class="btn btn-secondary" onclick="clearBatchFiles()">
+                            🗑️ Clear All
+                        </button>
+                    </div>
+                </div>
+
+                <div id="batchProgress" style="display: none; margin-top: 30px;">
+                    <h3>Processing Progress</h3>
+                    <div style="background: #f8f9ff; padding: 20px; border-radius: 10px; margin-top: 15px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                            <span>Progress:</span>
+                            <span id="batchProgressText">0%</span>
+                        </div>
+                        <div style="width: 100%; height: 20px; background: #ddd; border-radius: 10px; overflow: hidden;">
+                            <div id="batchProgressBar" style="width: 0%; height: 100%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); transition: width 0.3s;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="batchResults" style="display: none; margin-top: 30px;">
+                    <h3>Batch Results</h3>
+                    <div id="batchResultsContent"></div>
+                </div>
             </div>
 
-            <!-- Превью изображений -->
-            <div class="preview-section" id="previewSection">
-                <div class="image-preview">
-                    <h3>📷 Исходное изображение</h3>
-                    <img id="originalImage" alt="Original">
+            <!-- Tab 3: History -->
+            <div id="tabHistory" class="tab-content">
+                <h2>Inspection History</h2>
+                <p style="color: #666; margin-bottom: 20px;">View past inspections and results</p>
+
+                <div style="margin-bottom: 20px;">
+                    <button class="btn" onclick="loadHistory()">🔄 Refresh</button>
+                    <button class="btn btn-success" onclick="exportHistoryCSV()">📊 Export CSV</button>
                 </div>
-                <div class="image-preview">
-                    <h3>✨ Результат анализа</h3>
-                    <img id="resultImage" alt="Result">
-                </div>
+
+                <table class="history-table" id="historyTable">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Date & Time</th>
+                            <th>Filename</th>
+                            <th>Defects</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyTableBody">
+                        <tr>
+                            <td colspan="6" style="text-align: center; padding: 40px;">
+                                Loading history...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
 
-            <!-- Результаты -->
-            <div class="results-section" id="resultsSection">
-                <h2 style="margin-bottom: 20px;">📊 Результаты проверки</h2>
-                
-                <div id="statusBadge"></div>
+            <!-- Tab 4: Model Comparison -->
+            <div id="tabCompare" class="tab-content">
+                <h2>Model Comparison</h2>
+                <p style="color: #666; margin-bottom: 20px;">Compare results from different models</p>
 
-                <div class="stats-grid" id="statsGrid"></div>
+                <div class="upload-section" id="compareUploadSection">
+                    <div class="upload-icon">📷</div>
+                    <h3>Upload Image for Comparison</h3>
+                    <input type="file" id="compareFileInput" class="file-input" accept="image/*">
+                    <button class="btn" onclick="document.getElementById('compareFileInput').click()">
+                        Select Image
+                    </button>
+                </div>
 
-                <h3 style="margin: 30px 0 15px;">🔎 Обнаруженные дефекты</h3>
-                <div id="defectsList"></div>
+                <div id="compareControls" style="display: none; margin-top: 20px;">
+                    <button class="btn" onclick="compareModels()">
+                        🔬 Compare Models
+                    </button>
+                </div>
+
+                <div id="compareLoading" class="loading">
+                    <div class="spinner"></div>
+                    <h3>Comparing models...</h3>
+                </div>
+
+                <div id="compareResults" style="display: none; margin-top: 30px;">
+                    <h3>Comparison Results</h3>
+                    <div class="comparison-container" id="comparisonContainer"></div>
+                    
+                    <div style="margin-top: 30px; padding: 20px; background: #f8f9ff; border-radius: 10px;">
+                        <h4>Agreement Analysis</h4>
+                        <div id="agreementAnalysis"></div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

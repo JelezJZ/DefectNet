@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, EmailStr
-from datetime import datetime, timezone
+from datetime import datetime
 import uuid
 from sqlalchemy.orm import Session
 from src.database.models import get_db, User
@@ -89,9 +89,9 @@ async def login(credentials: UserLogin, db: Session = Depends(get_db)):
     
     if not user.is_active:
         raise HTTPException(status_code=403, detail="User is inactive")
-    
-    # Обновление времени последнего входа
-    user.last_login = datetime.now(timezone.utc)
+
+    # Обновление времени последнего входа (локальное время)
+    user.last_login = datetime.now()
     db.commit()
     
     # Создание токена

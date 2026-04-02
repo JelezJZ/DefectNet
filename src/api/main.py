@@ -1,6 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from ultralytics import YOLO
 import cv2
 import numpy as np
@@ -31,6 +32,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Статические файлы (frontend)
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+FRONTEND_DIR = BASE_DIR / "frontend"
+app.mount("/css", StaticFiles(directory=str(FRONTEND_DIR / "css")), name="css")
+app.mount("/js", StaticFiles(directory=str(FRONTEND_DIR / "js")), name="js")
 
 app.include_router(auth_router)
 app.include_router(websocket_router)
@@ -96,6 +103,9 @@ async def load_model():
 @app.get("/")
 async def root():
     """Главная страница API"""
+    index_path = FRONTEND_DIR / "index.html"
+    if index_path.exists():
+        return HTMLResponse(content=index_path.read_text())
     return {
         "message": "PCB Defect Detection API",
         "version": "1.0.0",
@@ -281,28 +291,29 @@ async def detect_defects(
         except Exception as db_error:
             db.rollback()
             print(f"Database error: {db_error}")
-        
-        return JSONResponse(content=response)
-    
+
+        return response
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Detection error: {str(e)}")
 
 @app.post("/batch-detect")
 async def batch_detect(
     files: List[UploadFile] = File(...),
-    confidence: float = 0.25
+    confidence: float = 0.25,
+    db: Session = Depends(get_db)
 ):
     """Пакетная обработка нескольких изображений"""
-    
+
     if len(files) > 20:
         raise HTTPException(status_code=400, detail="Maximum 20 images per batch")
-    
+
     results_list = []
-    
+
     for file in files:
         try:
             # Вызываем обычный detect для каждого файла
-            result = await detect_defects(file, confidence, save_image=False)
+            result = await detect_defects(file, confidence, save_image=False, db=db)
             results_list.append({
                 'filename': file.filename,
                 'status': 'success',
@@ -314,7 +325,7 @@ async def batch_detect(
                 'status': 'error',
                 'error': str(e)
             })
-    
+
     return {
         'batch_id': str(uuid.uuid4()),
         'total_images': len(files),
