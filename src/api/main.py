@@ -17,6 +17,7 @@ import os
 from src.api.auth_routes import router as auth_router
 from src.api.websocket_routes import router as websocket_router
 from src.api.batch_routes import router as batch_router
+from src.api.models_routes import router as model_router
 
 app = FastAPI(
     title="PCB Defect Detection API",
@@ -42,6 +43,7 @@ app.mount("/js", StaticFiles(directory=str(FRONTEND_DIR / "js")), name="js")
 app.include_router(auth_router)
 app.include_router(websocket_router)
 app.include_router(batch_router)
+app.include_router(model_router)
 
 # Глобальная переменная для модели
 model = None

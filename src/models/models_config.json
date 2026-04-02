@@ -1,0 +1,30 @@
+{
+    "models": {
+        "yolo11l_baseline": {
+            "path": "runs/detect/pcb_defect_detector_v11/weights/best.pt",
+            "version": "1.0",
+            "description": "Baseline YOLO11l model trained for 20 epochs",
+            "metrics": {
+                "mAP50": 0.85,
+                "mAP50-95": 0.48
+            },
+            "is_active": true
+        },
+        "yolo11l_improved": {
+            "path": "runs/detect/pcb_defect_detector_v12/weights/best.pt",
+            "version": "2.0",
+            "description": "Improved model with higher resolution and more epochs",
+            "metrics": {
+                "mAP50": 0.894,
+                "mAP50-95": 0.55
+            },
+            "is_active": true
+        },
+        "yolo11l_small": {
+            "path": "runs/detect/pcb_defect_detector_v9_with_empty_imgs/weights/best.pt",
+            "version": "3.0",
+            "description": "Small model - YOLO11l",
+            "is_active": true
+        }
+    }
+}
