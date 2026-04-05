@@ -54,6 +54,7 @@ class Inspection(Base):
     severity_breakdown = Column(JSON)
     detections = Column(JSON)
     result_image_path = Column(String, nullable=True)
+    original_image_path = Column(String, nullable=True)
     processing_time = Column(Float)  # в секундах
     operator_id = Column(String, ForeignKey('users.id'), nullable=True)
     operator = relationship("User", back_populates="inspections")

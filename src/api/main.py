@@ -260,6 +260,7 @@ async def detect_defects(
                 severity_breakdown=severity_counts,
                 detections=detections,
                 result_image_path=str(result_image_path) if result_image_path else None,
+                original_image_path=str(upload_path),
                 processing_time=time.time() - start_time
             )
             
@@ -315,7 +316,7 @@ async def batch_detect(
     for file in files:
         try:
             # Вызываем обычный detect для каждого файла
-            result = await detect_defects(file, confidence, save_image=False, db=db)
+            result = await detect_defects(file, confidence, save_image=True, db=db)
             results_list.append({
                 'filename': file.filename,
                 'status': 'success',
@@ -339,10 +340,20 @@ async def batch_detect(
 async def get_result_image(filename: str):
     """Получите изображение с результатами"""
     file_path = RESULTS_DIR / filename
-    
+
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Image not found")
-    
+
+    return FileResponse(file_path)
+
+@app.get("/uploads/{filename}")
+async def get_original_image(filename: str):
+    """Получите оригинальное изображение"""
+    file_path = UPLOAD_DIR / filename
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Image not found")
+
     return FileResponse(file_path)
 
 @app.get("/defect-info")
@@ -371,7 +382,7 @@ async def get_history(limit: int = 50, offset: int = 0, db: Session = Depends(ge
         .limit(limit)\
         .offset(offset)\
         .all()
-    
+
     return {
         'total': db.query(Inspection).count(),
         'limit': limit,
@@ -386,6 +397,33 @@ async def get_history(limit: int = 50, offset: int = 0, db: Session = Depends(ge
             }
             for i in inspections
         ]
+    }
+
+@app.get("/history/{inspection_id}")
+async def get_inspection_detail(inspection_id: str, db: Session = Depends(get_db)):
+    """Получите детальную информацию о проверке"""
+
+    inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
+
+    if not inspection:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+
+    return {
+        'id': inspection.id,
+        'timestamp': inspection.timestamp.isoformat(),
+        'filename': inspection.filename,
+        'image_width': inspection.image_width,
+        'image_height': inspection.image_height,
+        'confidence_threshold': inspection.confidence_threshold,
+        'total_defects': inspection.total_defects,
+        'status': inspection.status,
+        'severity_breakdown': inspection.severity_breakdown,
+        'detections': inspection.detections,
+        'result_image_path': inspection.result_image_path,
+        'original_image_path': inspection.original_image_path,
+        'processing_time': round(inspection.processing_time, 2),
+        'operator_id': inspection.operator_id,
+        'notes': inspection.notes
     }
 
 @app.get("/analytics/dashboard")
@@ -424,7 +462,7 @@ async def get_analytics(db: Session = Depends(get_db)):
 async def export_pdf_report(inspection_id: str, db: Session = Depends(get_db)):
     """Экспорт отчёта в PDF"""
 
-    output_dir = "reports"
+    output_dir = "storage/reports"
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -450,7 +488,7 @@ async def export_pdf_report(inspection_id: str, db: Session = Depends(get_db)):
     }
     
     # Генерируем PDF
-    output_path = f"reports/inspection_{inspection_id}.pdf"
+    output_path = f"storage/reports/inspection_{inspection_id}.pdf"
     generator = ReportGenerator()
     generator.generate_inspection_report(report_data, output_path)
     

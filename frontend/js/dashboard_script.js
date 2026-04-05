@@ -4,6 +4,15 @@ const WS_URL = 'ws://localhost:8000/ws/monitor';
 let ws;
 let defectsChart, timelineChart;
 
+const DEFECT_INFO = {
+    'mouse_bite': { name_ru: 'Мышиный укус', severity: 'medium', description: 'Неровные края на печатной плате' },
+    'spur': { name_ru: 'Выступ', severity: 'low', description: 'Выступ на проводнике' },
+    'missing_hole': { name_ru: 'Отсутствующее отверстие', severity: 'critical', description: 'Отверстие не просверлено или отсутствует' },
+    'short': { name_ru: 'Короткое замыкание', severity: 'critical', description: 'Нежелательное соединение проводников' },
+    'open_circuit': { name_ru: 'Разрыв цепи', severity: 'critical', description: 'Разрыв проводника' },
+    'spurious_copper': { name_ru: 'Лишняя медь', severity: 'medium', description: 'Остатки меди на плате' }
+};
+
 // Инициализация
 document.addEventListener('DOMContentLoaded', () => {
     initCharts();
@@ -49,11 +58,13 @@ function handleRealtimeUpdate(data) {
 
 function addActivityItem(inspection) {
     const feed = document.getElementById('activityFeed');
-    const statusClass = inspection.status === 'failed' ? 'failed' : 
+    const statusClass = inspection.status === 'failed' ? 'failed' :
                         inspection.status === 'warning' ? 'warning' : '';
-    
+
     const item = document.createElement('div');
     item.className = `activity-item ${statusClass}`;
+    item.style.cursor = 'pointer';
+    item.onclick = () => viewInspectionDetail(inspection.inspection_id);
     item.innerHTML = `
         <strong>New Inspection</strong><br>
         ID: ${inspection.inspection_id}<br>
@@ -61,7 +72,7 @@ function addActivityItem(inspection) {
         Defects: ${inspection.total_defects}<br>
         <small>${new Date().toLocaleTimeString()}</small>
     `;
-    
+
     feed.insertBefore(item, feed.firstChild);
 
     while (feed.children.length > 20) {
@@ -197,13 +208,106 @@ function updateDefectsChart(breakdown) {
 function updateTimelineChart(inspections) {
     // Группировка по часам
     const hourly = {};
-    
+
     inspections.forEach(insp => {
         const hour = new Date(insp.timestamp).getHours();
         hourly[hour] = (hourly[hour] || 0) + 1;
     });
-    
+
     timelineChart.data.labels = Object.keys(hourly).map(h => `${h}:00`);
     timelineChart.data.datasets[0].data = Object.values(hourly);
     timelineChart.update();
+}
+
+async function viewInspectionDetail(inspectionId) {
+    // Создаём модальное окно динамически
+    let modal = document.getElementById('dashboardInspectionModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'dashboardInspectionModal';
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>📋 Детали инспекции</h3>
+                    <span class="modal-close" onclick="this.closest('.modal').style.display='none'">&times;</span>
+                </div>
+                <div class="modal-body" id="dashboardInspectionBody">
+                    <div style="text-align: center; padding: 40px;">
+                        <div class="spinner"></div>
+                        <p>Загрузка...</p>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) modal.style.display = 'none';
+        });
+    }
+
+    const body = document.getElementById('dashboardInspectionBody');
+    modal.style.display = 'block';
+    body.innerHTML = '<div style="text-align: center; padding: 40px;"><div class="spinner"></div><p>Загрузка...</p></div>';
+
+    try {
+        const response = await fetch(`${API_URL}/history/${inspectionId}`);
+        if (!response.ok) throw new Error('Failed to load inspection');
+
+        const data = await response.json();
+        renderInspectionInModal(data, body);
+    } catch (error) {
+        body.innerHTML = `<p style="color: #dc3545;">Ошибка: ${error.message}</p>`;
+    }
+}
+
+function renderInspectionInModal(data, body) {
+    const statusText = { 'passed': '✅ PASSED', 'warning': '⚠️ WARNING', 'failed': '❌ FAILED' };
+    const date = new Date(data.timestamp);
+
+    const severityHtml = data.severity_breakdown ? `
+        <div class="meta-item"><label>🔴 Critical</label><span>${data.severity_breakdown.critical || 0}</span></div>
+        <div class="meta-item"><label>🟡 Medium</label><span>${data.severity_breakdown.medium || 0}</span></div>
+        <div class="meta-item"><label>🟢 Low</label><span>${data.severity_breakdown.low || 0}</span></div>
+    ` : '';
+
+    const originalImageHtml = data.original_image_path
+        ? `<img src="${API_URL}/uploads/${data.original_image_path.split('/').pop()}" alt="Original">`
+        : '<div style="min-height:200px;background:#333;display:flex;align-items:center;justify-content:center;border-radius:10px;color:#888;">Недоступно</div>';
+
+    const resultImageHtml = data.result_image_path
+        ? `<img src="${API_URL}/results/${data.result_image_path.split('/').pop()}" alt="Result">`
+        : '<div style="min-height:200px;background:#333;display:flex;align-items:center;justify-content:center;border-radius:10px;color:#888;">Недоступно</div>';
+
+    const defectsHtml = data.detections && data.detections.length > 0
+        ? data.detections.map((d, i) => {
+            const info = DEFECT_INFO[d.class] || { name_ru: d.class, description: '' };
+            return `
+                <div class="defect-card ${d.severity}">
+                    <h4>#${i + 1}: ${info.name_ru} <span class="severity-${d.severity}" style="float:right">${d.severity.toUpperCase()}</span></h4>
+                    <p>Confidence: ${(d.confidence * 100).toFixed(1)}%</p>
+                    <p>${info.description}</p>
+                </div>`;
+        }).join('')
+        : '<p style="text-align:center;color:#28a745;">🎉 Дефекты не обнаружены</p>';
+
+    body.innerHTML = `
+        <div class="inspection-detail-header">
+            <h3>Инспекция: ${data.id}</h3>
+            <span class="status-badge status-${data.status}">${statusText[data.status] || data.status}</span>
+        </div>
+        <div class="inspection-meta">
+            <div class="meta-item"><label>Дата</label><span>${date.toLocaleString()}</span></div>
+            <div class="meta-item"><label>Файл</label><span>${data.filename}</span></div>
+            <div class="meta-item"><label>Дефектов</label><span>${data.total_defects}</span></div>
+            <div class="meta-item"><label>Время</label><span>${data.processing_time} с</span></div>
+            ${severityHtml}
+        </div>
+        <div class="inspection-images">
+            <div><h4 style="margin-bottom:10px;color:#667eea;">📷 Оригинал</h4>${originalImageHtml}</div>
+            <div><h4 style="margin-bottom:10px;color:#667eea;">✨ Результат</h4>${resultImageHtml}</div>
+        </div>
+        <div class="inspection-defects"><h4>🔎 Дефекты (${data.detections ? data.detections.length : 0})</h4>${defectsHtml}</div>
+    `;
 }

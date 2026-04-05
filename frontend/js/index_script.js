@@ -6,6 +6,15 @@ let currentInspectionId = null;
 let authToken = localStorage.getItem('authToken');
 let currentUser = null;
 
+const DEFECT_INFO = {
+    'mouse_bite': { name_ru: 'Мышиный укус', severity: 'medium', description: 'Неровные края на печатной плате' },
+    'spur': { name_ru: 'Выступ', severity: 'low', description: 'Выступ на проводнике' },
+    'missing_hole': { name_ru: 'Отсутствующее отверстие', severity: 'critical', description: 'Отверстие не просверлено или отсутствует' },
+    'short': { name_ru: 'Короткое замыкание', severity: 'critical', description: 'Нежелательное соединение проводников' },
+    'open_circuit': { name_ru: 'Разрыв цепи', severity: 'critical', description: 'Разрыв проводника' },
+    'spurious_copper': { name_ru: 'Лишняя медь', severity: 'medium', description: 'Остатки меди на плате' }
+};
+
 // Инициализация
 document.addEventListener('DOMContentLoaded', () => {
     checkAuth();
@@ -576,8 +585,165 @@ async function loadHistory() {
 }
 
 async function viewInspection(inspectionId) {
-    alert(`View inspection details for ${inspectionId}\n(Feature to be implemented)`);
+    const modal = document.getElementById('inspectionModal');
+    const body = document.getElementById('inspectionModalBody');
+
+    modal.style.display = 'block';
+    body.innerHTML = '<div style="text-align: center; padding: 40px;"><div class="spinner"></div><p>Загрузка...</p></div>';
+
+    try {
+        const headers = {};
+        if (authToken) {
+            headers['Authorization'] = `Bearer ${authToken}`;
+        }
+
+        const response = await fetch(`${API_URL}/history/${inspectionId}`, {
+            headers: headers
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to load inspection');
+        }
+
+        const data = await response.json();
+        renderInspectionModal(data);
+
+    } catch (error) {
+        body.innerHTML = `<div class="alert alert-error">Ошибка: ${error.message}</div>`;
+    }
 }
+
+function renderInspectionModal(data) {
+    const body = document.getElementById('inspectionModalBody');
+
+    const statusClass = `status-${data.status}`;
+    const statusText = {
+        'passed': '✅ PASSED',
+        'warning': '⚠️ WARNING',
+        'failed': '❌ FAILED'
+    };
+
+    const date = new Date(data.timestamp);
+
+    const severityHtml = data.severity_breakdown ? `
+        <div class="meta-item">
+            <label>🔴 Critical</label>
+            <span>${data.severity_breakdown.critical || 0}</span>
+        </div>
+        <div class="meta-item">
+            <label>🟡 Medium</label>
+            <span>${data.severity_breakdown.medium || 0}</span>
+        </div>
+        <div class="meta-item">
+            <label>🟢 Low</label>
+            <span>${data.severity_breakdown.low || 0}</span>
+        </div>
+    ` : '';
+
+    const originalImageHtml = data.original_image_path
+        ? `<img src="${API_URL}/uploads/${data.original_image_path.split('/').pop()}" alt="Original">`
+        : '<div style="min-height:200px;background:#f0f0f0;display:flex;align-items:center;justify-content:center;border-radius:10px;color:#888;">Изображение недоступно</div>';
+
+    const resultImageHtml = data.result_image_path
+        ? `<img src="${API_URL}/results/${data.result_image_path.split('/').pop()}" alt="Result">`
+        : '<div style="min-height:200px;background:#f0f0f0;display:flex;align-items:center;justify-content:center;border-radius:10px;color:#888;">Изображение недоступно</div>';
+
+    const defectsHtml = data.detections && data.detections.length > 0
+        ? data.detections.map((defect, index) => {
+            const defectInfo = DEFECT_INFO[defect.class] || { name_ru: defect.class, description: '' };
+            return `
+                <div class="defect-card ${defect.severity}">
+                    <h4>
+                        #${index + 1}: ${defectInfo.name_ru || defect.class}
+                        <span class="severity-${defect.severity}" style="float: right;">
+                            ${defect.severity.toUpperCase()}
+                        </span>
+                    </h4>
+                    <p><strong>Confidence:</strong> ${(defect.confidence * 100).toFixed(1)}%</p>
+                    <p><strong>Description:</strong> ${defectInfo.description || defect.description || ''}</p>
+                    <p><strong>Coordinates:</strong>
+                        [${defect.bbox.x1.toFixed(0)}, ${defect.bbox.y1.toFixed(0)}] -
+                        [${defect.bbox.x2.toFixed(0)}, ${defect.bbox.y2.toFixed(0)}]
+                    </p>
+                </div>
+            `;
+        }).join('')
+        : '<p style="text-align: center; color: #28a745; font-size: 1.2em;">🎉 Дефекты не обнаружены</p>';
+
+    body.innerHTML = `
+        <div class="inspection-detail-header">
+            <h3>Инспекция: ${data.id}</h3>
+            <span class="status-badge ${statusClass}">${statusText[data.status] || data.status}</span>
+        </div>
+
+        <div class="inspection-meta">
+            <div class="meta-item">
+                <label>Дата и время</label>
+                <span>${date.toLocaleString()}</span>
+            </div>
+            <div class="meta-item">
+                <label>Файл</label>
+                <span>${data.filename}</span>
+            </div>
+            <div class="meta-item">
+                <label>Всего дефектов</label>
+                <span>${data.total_defects}</span>
+            </div>
+            <div class="meta-item">
+                <label>Время обработки</label>
+                <span>${data.processing_time} с</span>
+            </div>
+            <div class="meta-item">
+                <label>Порог уверенности</label>
+                <span>${(data.confidence_threshold * 100).toFixed(0)}%</span>
+            </div>
+            <div class="meta-item">
+                <label>Разрешение</label>
+                <span>${data.image_width}x${data.image_height}</span>
+            </div>
+            ${severityHtml}
+        </div>
+
+        <div class="inspection-images">
+            <div>
+                <h4 style="margin-bottom: 10px; color: #667eea;">📷 Исходное изображение</h4>
+                ${originalImageHtml}
+            </div>
+            <div>
+                <h4 style="margin-bottom: 10px; color: #667eea;">✨ Результат анализа</h4>
+                ${resultImageHtml}
+            </div>
+        </div>
+
+        <div class="inspection-defects">
+            <h4>🔎 Обнаруженные дефекты (${data.detections ? data.detections.length : 0})</h4>
+            ${defectsHtml}
+        </div>
+
+        <div style="margin-top: 20px; text-align: right;">
+            <button class="btn btn-success" onclick="exportPDFById('${data.id}')">📄 Экспорт PDF</button>
+        </div>
+    `;
+}
+
+function closeInspectionModal() {
+    document.getElementById('inspectionModal').style.display = 'none';
+}
+
+// Закрытие модального окна при клике вне его
+document.addEventListener('click', (e) => {
+    const modal = document.getElementById('inspectionModal');
+    if (e.target === modal) {
+        closeInspectionModal();
+    }
+});
+
+// Закрытие модального окна по Escape
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        closeInspectionModal();
+    }
+});
 
 async function exportPDFById(inspectionId) {
     try {
