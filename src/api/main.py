@@ -1,6 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from ultralytics import YOLO
 import cv2
@@ -18,6 +18,8 @@ from src.api.auth_routes import router as auth_router
 from src.api.websocket_routes import router as websocket_router
 from src.api.batch_routes import router as batch_router
 from src.api.models_routes import router as model_router
+import csv
+import io
 
 app = FastAPI(
     title="PCB Defect Detection API",
@@ -491,8 +493,72 @@ async def export_pdf_report(inspection_id: str, db: Session = Depends(get_db)):
     output_path = f"storage/reports/inspection_{inspection_id}.pdf"
     generator = ReportGenerator()
     generator.generate_inspection_report(report_data, output_path)
-    
+
     return FileResponse(output_path, filename=f"report_{inspection_id}.pdf")
+
+@app.get("/export/csv")
+async def export_inspections_csv(db: Session = Depends(get_db)):
+    """Экспорт всех проверок в CSV"""
+    
+    output_dir = "storage/exports"
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    inspections = db.query(Inspection).order_by(Inspection.timestamp.desc()).all()
+    
+    output = io.StringIO()
+    writer = csv.writer(output, lineterminator='\n')
+    
+    writer.writerow([
+        'ID',
+        'Дата и время',
+        'Имя файла',
+        'Ширина изображения',
+        'Высота изображения',
+        'Порог уверенности',
+        'Всего дефектов',
+        'Статус',
+        'Критические',
+        'Средние',
+        'Низкие',
+        'Время обработки (с)',
+        'Оператор ID',
+        'Примечания'
+    ])
+    
+    for insp in inspections:
+        severity = insp.severity_breakdown if insp.severity_breakdown else {}
+        writer.writerow([
+            insp.id,
+            insp.timestamp.strftime('%Y-%m-%d %H:%M:%S') if insp.timestamp else '',
+            insp.filename,
+            insp.image_width,
+            insp.image_height,
+            insp.confidence_threshold,
+            insp.total_defects,
+            insp.status,
+            severity.get('critical', 0),
+            severity.get('medium', 0),
+            severity.get('low', 0),
+            insp.processing_time,
+            insp.operator_id or '',
+            insp.notes or ''
+        ])
+    
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename = f"inspections_export_{timestamp}.csv"
+    output_path = os.path.join(output_dir, filename)
+    
+    output.seek(0)
+    with open(output_path, 'w', encoding='utf-8-sig', newline='') as f:
+        f.write(output.getvalue())
+    
+    return FileResponse(
+        output_path,
+        media_type="text/csv",
+        filename=filename,
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 if __name__ == "__main__":
     import uvicorn

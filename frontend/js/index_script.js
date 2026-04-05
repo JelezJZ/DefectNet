@@ -765,8 +765,34 @@ async function exportPDFById(inspectionId) {
     }
 }
 
-function exportHistoryCSV() {
-    alert('Export history to CSV\n(Feature to be implemented)');
+async function exportHistoryCSV() {
+    try {
+        const headers = {};
+        if (authToken) {
+            headers['Authorization'] = `Bearer ${authToken}`;
+        }
+
+        const response = await fetch(`${API_URL}/export/csv`, {
+            headers: headers
+        });
+
+        if (!response.ok) {
+            throw new Error('Export failed');
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'inspections_export.csv';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+    } catch (error) {
+        alert('Export failed: ' + error.message);
+    }
 }
 
 // ============ MODEL COMPARISON ============
