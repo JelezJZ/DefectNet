@@ -1,17 +1,21 @@
 from celery import Celery
 from celery.schedules import crontab
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 celery_app = Celery(
     'pcb_defect_detection',
-    broker='redis://localhost:6379/0',
-    backend='redis://localhost:6379/0'
+    broker=os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0'),
+    backend=os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
 )
 
 celery_app.conf.update(
     task_serializer='json',
     accept_content=['json'],
     result_serializer='json',
-    timezone='UTC',
+    timezone=os.getenv('CELERY_TIMEZONE', 'UTC'),
     enable_utc=True,
 )
 

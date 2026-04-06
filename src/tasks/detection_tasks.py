@@ -1,9 +1,13 @@
-from ultralitics import YOLO
+from ultralytics import YOLO
 from celery import group, chord
 from celery.exceptions import SoftTimeLimitExceeded
 from src.tasks.celery_config import celery_app
 import cv2
 import logging
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -15,11 +19,12 @@ def _load_model():
     """Ленивая загрузка модели"""
     global _model
     if _model is None:
-        _model = YOLO('src/models/best.pt')
+        model_path = os.getenv('MODEL_PATH', 'src/models/best.pt')
+        _model = YOLO(model_path)
     return _model
 
 
-@celery_app.task(bind=True, max_retries=3, time_limit=300)
+@celery_app.task(bind=True, max_retries=3, time_limit=int(os.getenv('TASK_TIME_LIMIT', '300')))
 def process_single_image(self, image_path: str, confidence: float = 0.25):
     """Асинхронная обработка одного изображения"""
 

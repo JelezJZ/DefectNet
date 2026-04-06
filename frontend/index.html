@@ -5,6 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PCB Defect Detection System</title>
     <link rel="stylesheet" href="css/index_style.css">
+    
+    <!-- Environment Configuration -->
+    <script>
+        // Default configuration - override in env-config.js if needed
+        window.ENV_CONFIG = {
+            API_URL: 'http://localhost:8000',
+            DEFAULT_CONFIDENCE: '0.25',
+            DEFAULT_IMAGE_SIZE: '1024',
+            MAX_BATCH_SIZE: '20',
+            MAX_FILE_SIZE_MB: '50',
+            ALLOWED_IMAGE_TYPES: 'image/jpeg,image/png,image/webp',
+            TOKEN_EXPIRE_MINUTES: '1440',
+            HEALTH_CHECK_ENABLED: 'true'
+        };
+    </script>
 </head>
 <body>
     <!-- Navbar -->

@@ -20,12 +20,31 @@ cd DefectNet
 # Установить зависимости
 pip install -r requirements.txt
 
+# Настроить переменные окружения
+cp .env.example .env
+# Отредактируйте .env под вашу среду (особенно JWT_SECRET_KEY!)
+
 # Скачать модели
 python scripts/download_models.py
 
 # Обучить модель (опционально)
 python notebooks/01_train_yolo.ipynb
 ```
+
+### Конфигурация
+
+⚠️ **ВАЖНО**: Перед запуском настройте `.env` файл:
+
+```bash
+# Сгенерировать безопасный JWT ключ
+openssl rand -hex 32
+
+# Скопировать результат в .env:
+# JWT_SECRET_KEY=ваш_ключ_из_32_символов
+```
+
+📖 Подробное руководство: [CONFIG.md](CONFIG.md)  
+🚀 Чеклист для продакшена: [ENV_SETUP.md](ENV_SETUP.md)
 
 ## Запуск
 

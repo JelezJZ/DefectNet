@@ -2,13 +2,15 @@ import uuid
 import shutil
 from pathlib import Path
 from typing import List
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, UploadFile, File, Depends
 from celery.result import AsyncResult
+from src.database.models import User
+from src.auth.jwt_handler import get_current_user
 
 router = APIRouter(prefix="/batch", tags=["Batch Processing"])
 
 @router.post("/upload")
-async def upload_batch(files: List[UploadFile] = File(...)):
+async def upload_batch(files: List[UploadFile] = File(...), current_user: User = Depends(get_current_user)):
     """Загрузка пакета изображений для обработки"""
     
     image_paths = []

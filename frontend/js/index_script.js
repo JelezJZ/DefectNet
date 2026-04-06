@@ -53,7 +53,7 @@ function initEventListeners() {
 // ============ AUTH ============
 async function checkAuth() {
     if (!authToken) {
-        updateUIForGuest();
+        showLoginForm();
         return;
     }
 
@@ -71,11 +71,11 @@ async function checkAuth() {
             // Token invalid
             localStorage.removeItem('authToken');
             authToken = null;
-            updateUIForGuest();
+            showLoginForm();
         }
     } catch (error) {
         console.error('Auth check failed:', error);
-        updateUIForGuest();
+        showLoginForm();
     }
 }
 
@@ -87,13 +87,6 @@ function updateUIForUser(user) {
     document.getElementById('mainContent').style.display = 'block';
     document.getElementById('loginFormContainer').style.display = 'none';
     document.getElementById('registerFormContainer').style.display = 'none';
-}
-
-function updateUIForGuest() {
-    document.getElementById('username').textContent = 'Guest';
-    document.getElementById('userAvatar').textContent = 'G';
-    document.getElementById('loginBtn').style.display = 'block';
-    document.getElementById('logoutBtn').style.display = 'none';
 }
 
 function showLoginForm() {
@@ -189,7 +182,6 @@ function logout() {
     localStorage.removeItem('authToken');
     authToken = null;
     currentUser = null;
-    updateUIForGuest();
     showLoginForm();
 }
 
@@ -277,14 +269,11 @@ async function analyzeImage() {
     const confidence = document.getElementById('confidenceSlider').value;
     
     try {
-        const headers = {};
-        if (authToken) {
-            headers['Authorization'] = `Bearer ${authToken}`;
-        }
-
         const response = await fetch(`${API_URL}/detect?confidence=${confidence}&save_image=true`, {
             method: 'POST',
-            headers: headers,
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            },
             body: formData
         });
 
@@ -472,14 +461,11 @@ async function processBatch() {
     });
 
     try {
-        const headers = {};
-        if (authToken) {
-            headers['Authorization'] = `Bearer ${authToken}`;
-        }
-
         const response = await fetch(`${API_URL}/batch-detect?confidence=0.25`, {
             method: 'POST',
-            headers: headers,
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            },
             body: formData
         });
 
@@ -536,13 +522,10 @@ async function loadHistory() {
     tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px;">Loading...</td></tr>';
 
     try {
-        const headers = {};
-        if (authToken) {
-            headers['Authorization'] = `Bearer ${authToken}`;
-        }
-
         const response = await fetch(`${API_URL}/history?limit=50`, {
-            headers: headers
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
         });
 
         if (!response.ok) {
@@ -592,13 +575,10 @@ async function viewInspection(inspectionId) {
     body.innerHTML = '<div style="text-align: center; padding: 40px;"><div class="spinner"></div><p>Загрузка...</p></div>';
 
     try {
-        const headers = {};
-        if (authToken) {
-            headers['Authorization'] = `Bearer ${authToken}`;
-        }
-
         const response = await fetch(`${API_URL}/history/${inspectionId}`, {
-            headers: headers
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
         });
 
         if (!response.ok) {
@@ -747,7 +727,11 @@ document.addEventListener('keydown', (e) => {
 
 async function exportPDFById(inspectionId) {
     try {
-        const response = await fetch(`${API_URL}/export/pdf/${inspectionId}`);
+        const response = await fetch(`${API_URL}/export/pdf/${inspectionId}`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
         
         if (!response.ok) {
             throw new Error('Export failed');
@@ -767,13 +751,10 @@ async function exportPDFById(inspectionId) {
 
 async function exportHistoryCSV() {
     try {
-        const headers = {};
-        if (authToken) {
-            headers['Authorization'] = `Bearer ${authToken}`;
-        }
-
         const response = await fetch(`${API_URL}/export/csv`, {
-            headers: headers
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
         });
 
         if (!response.ok) {
@@ -819,6 +800,9 @@ async function compareModels() {
     try {
         const response = await fetch(`${API_URL}/models/compare?confidence=0.25`, {
             method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            },
             body: formData
         });
 

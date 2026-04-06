@@ -3,6 +3,8 @@ const WS_URL = 'ws://localhost:8000/ws/monitor';
 
 let ws;
 let defectsChart, timelineChart;
+let authToken = localStorage.getItem('authToken');
+let currentUser = null;
 
 const DEFECT_INFO = {
     'mouse_bite': { name_ru: 'Мышиный укус', severity: 'medium', description: 'Неровные края на печатной плате' },
@@ -14,13 +16,51 @@ const DEFECT_INFO = {
 };
 
 // Инициализация
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    const authenticated = await checkAuth();
+    if (!authenticated) {
+        alert('Please login first');
+        window.location.href = '/';
+        return;
+    }
+    
     initCharts();
     connectWebSocket();
     loadInitialData();
 
     setInterval(loadAnalytics, 10000);
 });
+
+async function checkAuth() {
+    if (!authToken) {
+        return false;
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/auth/me`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
+
+        if (response.ok) {
+            currentUser = await response.json();
+            document.getElementById('userInfo').textContent = `👤 ${currentUser.username}`;
+            return true;
+        } else {
+            localStorage.removeItem('authToken');
+            return false;
+        }
+    } catch (error) {
+        console.error('Auth check failed:', error);
+        return false;
+    }
+}
+
+function logout() {
+    localStorage.removeItem('authToken');
+    window.location.href = '/';
+}
 
 function connectWebSocket() {
     ws = new WebSocket(WS_URL);
@@ -87,7 +127,11 @@ async function loadInitialData() {
 
 async function loadAnalytics() {
     try {
-        const response = await fetch(`${API_URL}/analytics/dashboard`);
+        const response = await fetch(`${API_URL}/analytics/dashboard`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
         const data = await response.json();
         
         // Обновление метрик
@@ -105,7 +149,11 @@ async function loadAnalytics() {
 
 async function loadHistory() {
     try {
-        const response = await fetch(`${API_URL}/history?limit=20`);
+        const response = await fetch(`${API_URL}/history?limit=20`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
         const data = await response.json();
         
         // Заполнить activity feed
@@ -252,7 +300,11 @@ async function viewInspectionDetail(inspectionId) {
     body.innerHTML = '<div style="text-align: center; padding: 40px;"><div class="spinner"></div><p>Загрузка...</p></div>';
 
     try {
-        const response = await fetch(`${API_URL}/history/${inspectionId}`);
+        const response = await fetch(`${API_URL}/history/${inspectionId}`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
         if (!response.ok) throw new Error('Failed to load inspection');
 
         const data = await response.json();

@@ -1,8 +1,10 @@
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, UploadFile, File, Depends
 from typing import List, Dict
 import numpy as np
 import cv2
 from src.models.model_manager import ModelManager
+from src.database.models import User
+from src.auth.jwt_handler import get_current_user
 
 router = APIRouter(prefix="/models", tags=["Model Management"])
 
@@ -10,7 +12,7 @@ router = APIRouter(prefix="/models", tags=["Model Management"])
 model_manager = ModelManager("src/models/models_config.json")
 
 @router.get("/list")
-async def list_models():
+async def list_models(current_user: User = Depends(get_current_user)):
     """Список всех доступных моделей"""
     return model_manager.get_model_info()
 
@@ -18,7 +20,8 @@ async def list_models():
 async def compare_models(
     file: UploadFile = File(...),
     models: List[str] = None,
-    confidence: float = 0.25
+    confidence: float = 0.25,
+    current_user: User = Depends(get_current_user)
 ):
     """Сравнение результатов разных моделей на одном изображении"""
     

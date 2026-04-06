@@ -10,11 +10,20 @@
 <body>
     <div class="dashboard">
         <div class="header">
-            <h1>📊 Real-time Dashboard</h1>
-            <p>
-                <span class="status-indicator status-online"></span>
-                Подключено к серверу
-            </p>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h1>📊 Real-time Dashboard</h1>
+                    <p>
+                        <span class="status-indicator status-online"></span>
+                        Подключено к серверу
+                        <span id="userInfo" style="margin-left: 20px;"></span>
+                    </p>
+                </div>
+                <div>
+                    <button onclick="window.location.href='/'" style="padding: 10px 20px; margin-right: 10px; background: #667eea; color: white; border: none; border-radius: 5px; cursor: pointer;">Главная</button>
+                    <button onclick="logout()" style="padding: 10px 20px; background: #dc3545; color: white; border: none; border-radius: 5px; cursor: pointer;">Выйти</button>
+                </div>
+            </div>
         </div>
 
         <div class="card">

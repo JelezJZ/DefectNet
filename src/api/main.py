@@ -1,6 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from ultralytics import YOLO
 import cv2
@@ -9,7 +9,7 @@ from pathlib import Path
 import uuid
 from datetime import datetime
 from typing import List
-from src.database.models import Inspection, DefectStatistics, get_db
+from src.database.models import Inspection, DefectStatistics, get_db, User
 import time
 from sqlalchemy.orm import Session
 from src.reports.generator import ReportGenerator
@@ -18,8 +18,13 @@ from src.api.auth_routes import router as auth_router
 from src.api.websocket_routes import router as websocket_router
 from src.api.batch_routes import router as batch_router
 from src.api.models_routes import router as model_router
+from src.auth.jwt_handler import get_current_user
 import csv
 import io
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 app = FastAPI(
     title="PCB Defect Detection API",
@@ -30,7 +35,7 @@ app = FastAPI(
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=os.getenv("ALLOWED_ORIGINS", "*").split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -50,10 +55,11 @@ app.include_router(model_router)
 # Глобальная переменная для модели
 model = None
 
+# Storage directories from env
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-STORAGE_DIR = BASE_DIR / "storage"
-UPLOAD_DIR = STORAGE_DIR / "uploads"
-RESULTS_DIR = STORAGE_DIR / "results"
+STORAGE_DIR = BASE_DIR / os.getenv("STORAGE_DIR", "storage")
+UPLOAD_DIR = BASE_DIR / os.getenv("UPLOAD_DIR", "storage/uploads")
+RESULTS_DIR = BASE_DIR / os.getenv("RESULTS_DIR", "storage/results")
 
 UPLOAD_DIR.mkdir(exist_ok=True)
 RESULTS_DIR.mkdir(exist_ok=True)
@@ -96,11 +102,11 @@ DEFECT_INFO = {
 async def load_model():
     """Загрузите модель при старте приложения"""
     global model
-    model_path = "src/models/best.pt"
-    
+    model_path = os.getenv("MODEL_PATH", "src/models/best.pt")
+
     if not Path(model_path).exists():
         raise RuntimeError(f"Model not found at {model_path}")
-    
+
     model = YOLO(model_path)
     print(f"✅ Model loaded from {model_path}")
 
@@ -125,32 +131,26 @@ async def health_check():
         "model_status": "loaded" if model else "not_loaded"
     }
 
-@app.post("/detect")
-async def detect_defects(
-    file: UploadFile = File(...),
-    confidence: float = 0.25,
-    save_image: bool = True,
-    db: Session = Depends(get_db)
+async def _process_detection(
+    file: UploadFile,
+    confidence: float,
+    save_image: bool,
+    db: Session,
+    current_user: User
 ):
     """
-    Основной endpoint для детекции дефектов
-    
-    Args:
-        file: Изображение печатной платы
-        confidence: Порог уверенности (0.0-1.0)
-        save_image: Сохранять ли изображение с результатами
-        db: Зависимость БД
+    Внутренняя функция для детекции дефектов (без FastAPI зависимостей)
     """
 
     start_time = time.time()
-    
+
     if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
-    
+
     # Валидация типа файла
     if not file.content_type.startswith('image/'):
         raise HTTPException(status_code=400, detail="File must be an image")
-    
+
     try:
         # Читаем изображение
         contents = await file.read()
@@ -161,35 +161,39 @@ async def detect_defects(
         extension = Path(file.filename).suffix or ".jpg"
         upload_filename = f"upload_{timestamp_str}_{unique_id}{extension}"
         upload_path = UPLOAD_DIR / upload_filename
-        
+
         # Записываем байты из памяти на диск
         with open(upload_path, "wb") as f:
             f.write(contents)
 
         nparr = np.frombuffer(contents, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
+
         if img is None:
             raise HTTPException(status_code=400, detail="Invalid image file")
-        
+
         # Запускаем детекцию
-        results = model(img, conf=confidence, imgsz=1024, iou=0.45, augment=True)
+        image_size = int(os.getenv("IMAGE_SIZE", "1024"))
+        iou_threshold = float(os.getenv("IOU_THRESHOLD", "0.45"))
+        augment = os.getenv("AUGMENT", "True").lower() == "true"
         
+        results = model(img, conf=confidence, imgsz=image_size, iou=iou_threshold, augment=augment)
+
         # Обрабатываем результаты
         detections = []
         total_defects = 0
         severity_counts = {'critical': 0, 'medium': 0, 'low': 0}
-        
+
         for r in results:
             for box in r.boxes:
                 class_id = int(box.cls)
                 class_name = model.names[class_id]
                 conf = float(box.conf)
                 bbox = box.xyxy[0].tolist()
-                
+
                 defect_info = DEFECT_INFO.get(class_name, {})
                 severity = defect_info.get('severity', 'unknown')
-                
+
                 detections.append({
                     'id': str(uuid.uuid4()),
                     'class': class_name,
@@ -204,29 +208,29 @@ async def detect_defects(
                     'severity': severity,
                     'description': defect_info.get('description', '')
                 })
-                
+
                 total_defects += 1
                 severity_counts[severity] = severity_counts.get(severity, 0) + 1
-        
+
         # Сохраняем изображение с результатами
         result_image_path = None
         if save_image and len(detections) > 0:
             result_img = results[0].plot()
-            
+
             # Генерируем уникальное имя
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             result_filename = f"result_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
             result_image_path = RESULTS_DIR / result_filename
-            
+
             cv2.imwrite(str(result_image_path), result_img)
-        
+
         # Определяем статус проверки
         inspection_status = "passed"
         if severity_counts.get('critical', 0) > 0:
             inspection_status = "failed"
         elif severity_counts.get('medium', 0) > 0:
             inspection_status = "warning"
-        
+
         response = {
             'success': True,
             'timestamp': datetime.now().isoformat(),
@@ -263,14 +267,15 @@ async def detect_defects(
                 detections=detections,
                 result_image_path=str(result_image_path) if result_image_path else None,
                 original_image_path=str(upload_path),
-                processing_time=time.time() - start_time
+                processing_time=time.time() - start_time,
+                operator_id=current_user.id
             )
-            
+
             db.add(inspection)
 
             # Группируем детекции из текущего запроса по типам
             stats_map = {} # { 'missing_component': {'count': 0, 'total_conf': 0.0} }
-            
+
             for det in detections:
                 d_type = det['class']
                 conf = det['confidence']
@@ -302,23 +307,45 @@ async def detect_defects(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Detection error: {str(e)}")
 
+@app.post("/detect")
+async def detect_defects(
+    file: UploadFile = File(...),
+    confidence: float = 0.25,
+    save_image: bool = True,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Основной endpoint для детекции дефектов
+
+    Args:
+        file: Изображение печатной платы
+        confidence: Порог уверенности (0.0-1.0)
+        save_image: Сохранять ли изображение с результатами
+        db: Зависимость БД
+        current_user: Текущий пользователь
+    """
+    return await _process_detection(file, confidence, save_image, db, current_user)
+
 @app.post("/batch-detect")
 async def batch_detect(
     files: List[UploadFile] = File(...),
     confidence: float = 0.25,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """Пакетная обработка нескольких изображений"""
 
-    if len(files) > 20:
-        raise HTTPException(status_code=400, detail="Maximum 20 images per batch")
+    max_batch_size = int(os.getenv("MAX_BATCH_SIZE", "20"))
+    if len(files) > max_batch_size:
+        raise HTTPException(status_code=400, detail=f"Maximum {max_batch_size} images per batch")
 
     results_list = []
 
     for file in files:
         try:
-            # Вызываем обычный detect для каждого файла
-            result = await detect_defects(file, confidence, save_image=True, db=db)
+            # Вызываем внутреннюю функцию detect для каждого файла
+            result = await _process_detection(file, confidence, save_image=True, db=db, current_user=current_user)
             results_list.append({
                 'filename': file.filename,
                 'status': 'success',
@@ -376,7 +403,7 @@ async def get_statistics():
     }
 
 @app.get("/history")
-async def get_history(limit: int = 50, offset: int = 0, db: Session = Depends(get_db)):
+async def get_history(limit: int = 50, offset: int = 0, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Получите историю проверок"""
 
     inspections = db.query(Inspection)\
@@ -402,7 +429,7 @@ async def get_history(limit: int = 50, offset: int = 0, db: Session = Depends(ge
     }
 
 @app.get("/history/{inspection_id}")
-async def get_inspection_detail(inspection_id: str, db: Session = Depends(get_db)):
+async def get_inspection_detail(inspection_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Получите детальную информацию о проверке"""
 
     inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
@@ -429,7 +456,7 @@ async def get_inspection_detail(inspection_id: str, db: Session = Depends(get_db
     }
 
 @app.get("/analytics/dashboard")
-async def get_analytics(db: Session = Depends(get_db)):
+async def get_analytics(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Дашборд с аналитикой"""
 
     total_inspections = db.query(Inspection).count()
@@ -461,10 +488,10 @@ async def get_analytics(db: Session = Depends(get_db)):
     }
 
 @app.get("/export/pdf/{inspection_id}")
-async def export_pdf_report(inspection_id: str, db: Session = Depends(get_db)):
+async def export_pdf_report(inspection_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Экспорт отчёта в PDF"""
 
-    output_dir = "storage/reports"
+    output_dir = os.getenv("REPORTS_DIR", "storage/reports")
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -497,10 +524,10 @@ async def export_pdf_report(inspection_id: str, db: Session = Depends(get_db)):
     return FileResponse(output_path, filename=f"report_{inspection_id}.pdf")
 
 @app.get("/export/csv")
-async def export_inspections_csv(db: Session = Depends(get_db)):
+async def export_inspections_csv(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Экспорт всех проверок в CSV"""
-    
-    output_dir = "storage/exports"
+
+    output_dir = os.getenv("EXPORTS_DIR", "storage/exports")
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     
@@ -562,7 +589,9 @@ async def export_inspections_csv(db: Session = Depends(get_db)):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("src.api.main:app", host="0.0.0.0", port=8000, reload=True)
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "8000"))
+    uvicorn.run("src.api.main:app", host=host, port=port, reload=True)
     
     # Команда запуска:
     # export PYTHONPATH=$PYTHONPATH:$(pwd)/src  # Для Linux/macOS

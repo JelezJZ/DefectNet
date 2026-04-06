@@ -5,6 +5,10 @@ from datetime import datetime, timezone
 import bcrypt
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import relationship
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 Base = declarative_base()
 
@@ -97,7 +101,20 @@ class DefectTemplate(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 # Создание БД
-engine = create_engine('sqlite:///pcb_defects.db')
+DATABASE_URL = os.getenv('DATABASE_URL')
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable is not set")
+
+# Optional pool configuration
+DB_POOL_SIZE = int(os.getenv('DB_POOL_SIZE', '5'))
+DB_MAX_OVERFLOW = int(os.getenv('DB_MAX_OVERFLOW', '10'))
+
+engine = create_engine(
+    DATABASE_URL,
+    pool_size=DB_POOL_SIZE,
+    max_overflow=DB_MAX_OVERFLOW,
+    pool_pre_ping=True
+)
 Base.metadata.create_all(engine)
 SessionLocal = sessionmaker(bind=engine)
 
