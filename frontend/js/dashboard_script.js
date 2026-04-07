@@ -45,7 +45,7 @@ async function checkAuth() {
 
         if (response.ok) {
             currentUser = await response.json();
-            document.getElementById('userInfo').textContent = `👤 ${currentUser.username}`;
+            updateUserInfo();
             return true;
         } else {
             localStorage.removeItem('authToken');
@@ -59,6 +59,8 @@ async function checkAuth() {
 
 function logout() {
     localStorage.removeItem('authToken');
+    currentUser = null;
+    updateUserInfo();
     window.location.href = '/';
 }
 
@@ -200,11 +202,11 @@ function initCharts() {
             scales: {
                 y: { 
                     beginAtZero: true,
-                    ticks: { color: '#eee' },
+                    ticks: { color: 'rgba(102, 126, 234, 0.8)' },
                     grid: { color: 'rgba(255, 255, 255, 0.1)' }
                 },
                 x: { 
-                    ticks: { color: '#eee' },
+                    ticks: { color: 'rgba(102, 126, 234, 0.8)' },
                     grid: { color: 'rgba(255, 255, 255, 0.1)' }
                 }
             }
@@ -230,16 +232,16 @@ function initCharts() {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: { labels: { color: '#eee' } }
+                legend: { labels: { color: 'rgba(102, 126, 234, 0.8)' } }
             },
             scales: {
                 y: { 
                     beginAtZero: true,
-                    ticks: { color: '#eee' },
+                    ticks: { color: 'rgba(102, 126, 234, 0.8)' },
                     grid: { color: 'rgba(255, 255, 255, 0.1)' }
                 },
                 x: { 
-                    ticks: { color: '#eee' },
+                    ticks: { color: 'rgba(102, 126, 234, 0.8)' },
                     grid: { color: 'rgba(255, 255, 255, 0.1)' }
                 }
             }
@@ -363,3 +365,31 @@ function renderInspectionInModal(data, body) {
         <div class="inspection-defects"><h4>🔎 Дефекты (${data.detections ? data.detections.length : 0})</h4>${defectsHtml}</div>
     `;
 }
+// Helper functions for navbar integration
+function updateUserInfo() {
+    const usernameEl = document.getElementById('username');
+    const avatarEl = document.getElementById('userAvatar');
+    const loginBtn = document.getElementById('loginBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    
+    if (currentUser) {
+        usernameEl.textContent = currentUser.username;
+        avatarEl.textContent = currentUser.username.charAt(0).toUpperCase();
+        loginBtn.style.display = 'none';
+        logoutBtn.style.display = 'inline-block';
+    } else {
+        usernameEl.textContent = 'Guest';
+        avatarEl.textContent = 'U';
+        loginBtn.style.display = 'inline-block';
+        logoutBtn.style.display = 'none';
+    }
+}
+
+function showLoginForm() {
+    window.location.href = '/';
+}
+
+// Initialize user info on page load
+document.addEventListener('DOMContentLoaded', () => {
+    updateUserInfo();
+});

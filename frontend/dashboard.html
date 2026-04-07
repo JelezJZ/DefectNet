@@ -6,25 +6,28 @@
     <title>Real-time Dashboard - PCB Defect Detection</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="css/dashboard_style.css">
+    <link rel="stylesheet" href="css/index_style.css">
 </head>
 <body>
-    <div class="dashboard">
-        <div class="header">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <h1>📊 Real-time Dashboard</h1>
-                    <p>
-                        <span class="status-indicator status-online"></span>
-                        Подключено к серверу
-                        <span id="userInfo" style="margin-left: 20px;"></span>
-                    </p>
-                </div>
-                <div>
-                    <button onclick="window.location.href='/'" style="padding: 10px 20px; margin-right: 10px; background: #667eea; color: white; border: none; border-radius: 5px; cursor: pointer;">Главная</button>
-                    <button onclick="logout()" style="padding: 10px 20px; background: #dc3545; color: white; border: none; border-radius: 5px; cursor: pointer;">Выйти</button>
-                </div>
-            </div>
+    <!-- Navbar -->
+    <div class="navbar">
+        <div class="navbar-brand">🔍 PCB Defect Detection</div>
+        <ul class="navbar-menu">
+            <li><a href="/">Детекция</a></li>
+            <li><a href="/">Пакетная обработка</a></li>
+            <li><a href="/">История</a></li>
+            <li><a href="/">Модели</a></li>
+            <li><a href="/dashboard" class="active">Аналитика</a></li>
+        </ul>
+        <div class="user-menu">
+            <div class="user-avatar" id="userAvatar">U</div>
+            <span id="username">Guest</span>
+            <button class="btn btn-secondary" onclick="logout()" id="logoutBtn" style="display: none; padding: 8px 20px; margin: 0;">Выйти</button>
+            <button class="btn" onclick="showLoginForm()" id="loginBtn" style="padding: 8px 20px; margin: 0;">Войти</button>
         </div>
+    </div>
+
+    <div class="dashboard-container">
 
         <div class="card">
             <h3>Всего проверок</h3>
@@ -70,7 +73,23 @@
             </div>
         </div>
     </div>
-    
+
+    <!-- Inspection Detail Modal -->
+    <div id="inspectionModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>📋 Детали инспекции</h3>
+                <span class="modal-close" onclick="closeInspectionModal()">&times;</span>
+            </div>
+            <div class="modal-body" id="inspectionModalBody">
+                <div style="text-align: center; padding: 40px;">
+                    <div class="spinner"></div>
+                    <p>Загрузка...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="js/dashboard_script.js"></script>
 </body>
 </html>

@@ -221,7 +221,7 @@ function switchPage(page) {
         'batch': 'batch',
         'history': 'history',
         'models': 'compare',
-        'analytics': 'single' // Можно создать отдельную вкладку для аналитики
+        'analytics': 'analytics'
     };
 
     switchTab(pageToTab[page] || 'single');

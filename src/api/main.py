@@ -123,6 +123,14 @@ async def root():
         "model_loaded": model is not None
     }
 
+@app.get("/dashboard")
+async def dashboard():
+    """Страница дашборда"""
+    dashboard_path = FRONTEND_DIR / "dashboard.html"
+    if dashboard_path.exists():
+        return HTMLResponse(content=dashboard_path.read_text())
+    return {"error": "Dashboard not found"}
+
 @app.get("/health")
 async def health_check():
     """Проверка работоспособности"""
