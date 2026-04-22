@@ -3,13 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from ultralytics import YOLO
-import cv2
-import numpy as np
 from pathlib import Path
 import uuid
 from datetime import datetime
 from typing import List
-from src.database.models import Inspection, DefectStatistics, get_db, User
+from src.database.models import Inspection, get_db, User
 import time
 from sqlalchemy.orm import Session
 from src.reports.generator import ReportGenerator
@@ -22,6 +20,18 @@ from src.auth.jwt_handler import get_current_user
 import csv
 import io
 from dotenv import load_dotenv
+from src.services.detection_pipeline import (
+    validate_image_upload,
+    save_uploaded_image,
+    decode_image,
+    run_inference,
+    build_detections,
+    save_result_visualization,
+    get_inspection_status,
+    build_defect_stats,
+)
+from src.services.detection_response import build_detection_response
+from src.services.inspection_persistence import save_inspection_and_stats
 
 # Load environment variables
 load_dotenv()
@@ -155,160 +165,56 @@ async def _process_detection(
     if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
-    # Валидация типа файла
-    if not file.content_type.startswith('image/'):
-        raise HTTPException(status_code=400, detail="File must be an image")
+    validate_image_upload(file)
 
     try:
-        # Читаем изображение
         contents = await file.read()
+        upload_path = save_uploaded_image(contents, file.filename, UPLOAD_DIR)
+        img = decode_image(contents)
 
-        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-        unique_id = uuid.uuid4().hex[:8]
-        # Сохраняем расширение оригинального файла
-        extension = Path(file.filename).suffix or ".jpg"
-        upload_filename = f"upload_{timestamp_str}_{unique_id}{extension}"
-        upload_path = UPLOAD_DIR / upload_filename
-
-        # Записываем байты из памяти на диск
-        with open(upload_path, "wb") as f:
-            f.write(contents)
-
-        nparr = np.frombuffer(contents, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
-        if img is None:
-            raise HTTPException(status_code=400, detail="Invalid image file")
-
-        # Запускаем детекцию
         image_size = int(os.getenv("IMAGE_SIZE", "1024"))
         iou_threshold = float(os.getenv("IOU_THRESHOLD", "0.45"))
         augment = os.getenv("AUGMENT", "True").lower() == "true"
-        
-        results = model(img, conf=confidence, imgsz=image_size, iou=iou_threshold, augment=augment)
 
-        # Обрабатываем результаты
-        detections = []
-        total_defects = 0
-        severity_counts = {'critical': 0, 'medium': 0, 'low': 0}
+        results = run_inference(model, img, confidence, image_size, iou_threshold, augment)
+        detections, severity_counts = build_detections(results, model.names, DEFECT_INFO)
+        total_defects = len(detections)
+        result_image_path, result_image_url = save_result_visualization(
+            results, detections, save_image, RESULTS_DIR
+        )
+        inspection_status = get_inspection_status(severity_counts)
 
-        for r in results:
-            for box in r.boxes:
-                class_id = int(box.cls)
-                class_name = model.names[class_id]
-                conf = float(box.conf)
-                bbox = box.xyxy[0].tolist()
+        response = build_detection_response(
+            filename=file.filename,
+            image_width=img.shape[1],
+            image_height=img.shape[0],
+            confidence_threshold=confidence,
+            model_name="YOLO11m",
+            total_defects=total_defects,
+            inspection_status=inspection_status,
+            severity_counts=severity_counts,
+            detections=detections,
+            result_image_url=result_image_url,
+        )
 
-                defect_info = DEFECT_INFO.get(class_name, {})
-                severity = defect_info.get('severity', 'unknown')
-
-                detections.append({
-                    'id': str(uuid.uuid4()),
-                    'class': class_name,
-                    'class_ru': defect_info.get('name_ru', class_name),
-                    'confidence': round(conf, 3),
-                    'bbox': {
-                        'x1': round(bbox[0], 2),
-                        'y1': round(bbox[1], 2),
-                        'x2': round(bbox[2], 2),
-                        'y2': round(bbox[3], 2)
-                    },
-                    'severity': severity,
-                    'description': defect_info.get('description', '')
-                })
-
-                total_defects += 1
-                severity_counts[severity] = severity_counts.get(severity, 0) + 1
-
-        # Сохраняем изображение с результатами
-        result_image_path = None
-        if save_image and len(detections) > 0:
-            result_img = results[0].plot()
-
-            # Генерируем уникальное имя
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            result_filename = f"result_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
-            result_image_path = RESULTS_DIR / result_filename
-
-            cv2.imwrite(str(result_image_path), result_img)
-
-        # Определяем статус проверки
-        inspection_status = "passed"
-        if severity_counts.get('critical', 0) > 0:
-            inspection_status = "failed"
-        elif severity_counts.get('medium', 0) > 0:
-            inspection_status = "warning"
-
-        response = {
-            'success': True,
-            'timestamp': datetime.now().isoformat(),
-            'inspection_id': str(uuid.uuid4()),
-            'image_info': {
-                'filename': file.filename,
-                'width': img.shape[1],
-                'height': img.shape[0]
-            },
-            'detection_params': {
-                'confidence_threshold': confidence,
-                'model': 'YOLO11m'
-            },
-            'results': {
-                'total_defects': total_defects,
-                'status': inspection_status,
-                'severity_breakdown': severity_counts,
-                'detections': detections
-            },
-            'result_image': f"/results/{result_filename}" if result_image_path else None
-        }
-
-        try:
-            inspection = Inspection(
-                id=response['inspection_id'],
-                timestamp=datetime.now(),
-                filename=file.filename,
-                image_width=img.shape[1],
-                image_height=img.shape[0],
-                confidence_threshold=confidence,
-                total_defects=total_defects,
-                status=inspection_status,
-                severity_breakdown=severity_counts,
-                detections=detections,
-                result_image_path=str(result_image_path) if result_image_path else None,
-                original_image_path=str(upload_path),
-                processing_time=time.time() - start_time,
-                operator_id=current_user.id
-            )
-
-            db.add(inspection)
-
-            # Группируем детекции из текущего запроса по типам
-            stats_map = {} # { 'missing_component': {'count': 0, 'total_conf': 0.0} }
-
-            for det in detections:
-                d_type = det['class']
-                conf = det['confidence']
-                if d_type not in stats_map:
-                    stats_map[d_type] = {'count': 0, 'total_conf': 0.0}
-                stats_map[d_type]['count'] += 1
-                stats_map[d_type]['total_conf'] += conf
-
-            # Записываем агрегированные данные в БД
-            for d_type, data in stats_map.items():
-                # Ищем, есть ли уже статистика по этому типу за сегодня (опционально)
-                # Или просто добавляем новую запись для каждой инспекции:
-                stat_entry = DefectStatistics(
-                    date=datetime.now(),
-                    defect_type=d_type,
-                    count=data['count'],
-                    avg_confidence=data['total_conf'] / data['count']
-                )
-                db.add(stat_entry)
-
-            db.commit()
-            db.refresh(inspection) # Обновляем объект из базы
-        except Exception as db_error:
-            db.rollback()
-            print(f"Database error: {db_error}")
+        stats_map = build_defect_stats(detections)
+        save_inspection_and_stats(
+            db=db,
+            inspection_id=response['inspection_id'],
+            filename=file.filename,
+            image_width=img.shape[1],
+            image_height=img.shape[0],
+            confidence_threshold=confidence,
+            total_defects=total_defects,
+            inspection_status=inspection_status,
+            severity_counts=severity_counts,
+            detections=detections,
+            result_image_path=result_image_path,
+            upload_path=upload_path,
+            processing_time=time.time() - start_time,
+            operator_id=current_user.id,
+            stats_map=stats_map,
+        )
 
         return response
 
