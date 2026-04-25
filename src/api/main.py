@@ -32,6 +32,7 @@ from src.services.detection_pipeline import (
 )
 from src.services.detection_response import build_detection_response
 from src.services.inspection_persistence import save_inspection_and_stats
+from src.services.model_registry import discover_model_paths, get_or_load_model
 
 # Load environment variables
 load_dotenv()
@@ -64,6 +65,8 @@ app.include_router(model_router)
 
 # Глобальная переменная для модели
 model = None
+model_cache = {}
+available_model_paths = {}
 
 # Storage directories from env
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -111,13 +114,18 @@ DEFECT_INFO = {
 @app.on_event("startup")
 async def load_model():
     """Загрузите модель при старте приложения"""
-    global model
+    global model, model_cache, available_model_paths
     model_path = os.getenv("MODEL_PATH", "src/models/best.pt")
 
     if not Path(model_path).exists():
         raise RuntimeError(f"Model not found at {model_path}")
 
     model = YOLO(model_path)
+    model_cache = {"default": model}
+    available_model_paths = discover_model_paths(
+        default_model_path=model_path,
+        models_config_path=BASE_DIR / "src" / "models" / "models_config.json",
+    )
     print(f"✅ Model loaded from {model_path}")
 
 @app.get("/")
@@ -152,6 +160,7 @@ async def health_check():
 async def _process_detection(
     file: UploadFile,
     confidence: float,
+    model_name: str,
     save_image: bool,
     db: Session,
     current_user: User
@@ -165,10 +174,16 @@ async def _process_detection(
     if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
-    validate_image_upload(file)
-
     try:
+        selected_model, selected_model_name = get_or_load_model(
+            model_name=model_name,
+            model_cache=model_cache,
+            model_paths=available_model_paths,
+        )
+
         contents = await file.read()
+        max_upload_size_mb = int(os.getenv("MAX_UPLOAD_SIZE_MB", "50"))
+        validate_image_upload(file, contents, max_upload_size_mb)
         upload_path = save_uploaded_image(contents, file.filename, UPLOAD_DIR)
         img = decode_image(contents)
 
@@ -176,8 +191,8 @@ async def _process_detection(
         iou_threshold = float(os.getenv("IOU_THRESHOLD", "0.45"))
         augment = os.getenv("AUGMENT", "True").lower() == "true"
 
-        results = run_inference(model, img, confidence, image_size, iou_threshold, augment)
-        detections, severity_counts = build_detections(results, model.names, DEFECT_INFO)
+        results = run_inference(selected_model, img, confidence, image_size, iou_threshold, augment)
+        detections, severity_counts = build_detections(results, selected_model.names, DEFECT_INFO)
         total_defects = len(detections)
         result_image_path, result_image_url = save_result_visualization(
             results, detections, save_image, RESULTS_DIR
@@ -189,7 +204,7 @@ async def _process_detection(
             image_width=img.shape[1],
             image_height=img.shape[0],
             confidence_threshold=confidence,
-            model_name="YOLO11m",
+            model_name=selected_model_name,
             total_defects=total_defects,
             inspection_status=inspection_status,
             severity_counts=severity_counts,
@@ -225,6 +240,7 @@ async def _process_detection(
 async def detect_defects(
     file: UploadFile = File(...),
     confidence: float = 0.25,
+    model_name: str = "default",
     save_image: bool = True,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -239,12 +255,13 @@ async def detect_defects(
         db: Зависимость БД
         current_user: Текущий пользователь
     """
-    return await _process_detection(file, confidence, save_image, db, current_user)
+    return await _process_detection(file, confidence, model_name, save_image, db, current_user)
 
 @app.post("/batch-detect")
 async def batch_detect(
     files: List[UploadFile] = File(...),
     confidence: float = 0.25,
+    model_name: str = "default",
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -259,7 +276,14 @@ async def batch_detect(
     for file in files:
         try:
             # Вызываем внутреннюю функцию detect для каждого файла
-            result = await _process_detection(file, confidence, save_image=True, db=db, current_user=current_user)
+            result = await _process_detection(
+                file,
+                confidence,
+                model_name,
+                save_image=True,
+                db=db,
+                current_user=current_user,
+            )
             results_list.append({
                 'filename': file.filename,
                 'status': 'success',
@@ -303,6 +327,14 @@ async def get_original_image(filename: str):
 async def get_defect_info():
     """Получите информацию о типах дефектов"""
     return DEFECT_INFO
+
+
+@app.get("/models/available")
+async def get_available_models(current_user: User = Depends(get_current_user)):
+    """Список доступных моделей для endpoint /detect"""
+    return {
+        "models": sorted(available_model_paths.keys())
+    }
 
 @app.get("/statistics")
 async def get_statistics():

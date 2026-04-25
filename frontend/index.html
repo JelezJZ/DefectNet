@@ -129,6 +129,12 @@
 
                 <div class="controls" style="display: none;" id="controls">
                     <div class="slider-container">
+                        <label for="singleModelSelect">Модель детекции</label>
+                        <select id="singleModelSelect" class="control-select model-select">
+                            <option value="default">default</option>
+                        </select>
+                    </div>
+                    <div class="slider-container">
                         <label for="confidenceSlider">
                             Порог уверенности: <span id="confidenceValue">0.25</span>
                         </label>
@@ -190,6 +196,12 @@
                     <div class="batch-files-list" id="batchFilesList"></div>
 
                     <div style="margin-top: 20px;">
+                        <div class="slider-container">
+                            <label for="batchModelSelect">Модель детекции</label>
+                            <select id="batchModelSelect" class="control-select model-select">
+                                <option value="default">default</option>
+                            </select>
+                        </div>
                         <button class="btn" onclick="processBatch()">
                             🚀 Обработать все
                         </button>

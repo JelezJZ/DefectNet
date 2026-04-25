@@ -7,9 +7,19 @@ import numpy as np
 from fastapi import HTTPException, UploadFile
 
 
-def validate_image_upload(file: UploadFile) -> None:
+def validate_image_upload(file: UploadFile, contents: bytes, max_upload_size_mb: int) -> None:
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
+
+    if not contents:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    max_upload_size_bytes = max_upload_size_mb * 1024 * 1024
+    if len(contents) > max_upload_size_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum allowed size is {max_upload_size_mb} MB",
+        )
 
 
 def save_uploaded_image(contents: bytes, original_filename: str, upload_dir: Path) -> Path:

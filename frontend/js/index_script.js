@@ -87,6 +87,45 @@ function updateUIForUser(user) {
     document.getElementById('mainContent').style.display = 'block';
     document.getElementById('loginFormContainer').style.display = 'none';
     document.getElementById('registerFormContainer').style.display = 'none';
+    loadAvailableModels();
+}
+
+async function loadAvailableModels() {
+    const modelSelects = Array.from(document.querySelectorAll('.model-select'));
+    if (modelSelects.length === 0 || !authToken) {
+        return;
+    }
+
+    modelSelects.forEach((select) => {
+        select.innerHTML = '<option value="default">default</option>';
+    });
+
+    try {
+        const response = await fetch(`${API_URL}/models/available`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
+
+        if (!response.ok) {
+            return;
+        }
+
+        const data = await response.json();
+        (data.models || []).forEach((modelName) => {
+            if (modelName === 'default') {
+                return;
+            }
+            modelSelects.forEach((select) => {
+                const option = document.createElement('option');
+                option.value = modelName;
+                option.textContent = modelName;
+                select.appendChild(option);
+            });
+        });
+    } catch (error) {
+        console.error('Failed to load models list:', error);
+    }
 }
 
 function showLoginForm() {
@@ -267,9 +306,10 @@ async function analyzeImage() {
     formData.append('file', selectedFile);
     
     const confidence = document.getElementById('confidenceSlider').value;
+    const modelName = document.getElementById('singleModelSelect')?.value || 'default';
     
     try {
-        const response = await fetch(`${API_URL}/detect?confidence=${confidence}&save_image=true`, {
+        const response = await fetch(`${API_URL}/detect?confidence=${confidence}&model_name=${encodeURIComponent(modelName)}&save_image=true`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${authToken}`
@@ -459,9 +499,10 @@ async function processBatch() {
     batchFiles.forEach(file => {
         formData.append('files', file);
     });
+    const modelName = document.getElementById('batchModelSelect')?.value || 'default';
 
     try {
-        const response = await fetch(`${API_URL}/batch-detect?confidence=0.25`, {
+        const response = await fetch(`${API_URL}/batch-detect?confidence=0.25&model_name=${encodeURIComponent(modelName)}`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${authToken}`
