@@ -1,11 +1,12 @@
 import uuid
-import shutil
+import os
 from pathlib import Path
 from typing import List
 from fastapi import APIRouter, UploadFile, File, Depends
 from celery.result import AsyncResult
 from src.database.models import User
 from src.auth.jwt_handler import get_current_user
+from src.services.detection_pipeline import validate_image_upload
 
 router = APIRouter(prefix="/batch", tags=["Batch Processing"])
 
@@ -16,11 +17,22 @@ async def upload_batch(files: List[UploadFile] = File(...), current_user: User =
     image_paths = []
     batch_dir = Path(f"batch_{uuid.uuid4()}")
     batch_dir.mkdir(exist_ok=True)
+
+    max_upload_size_mb = int(os.getenv("MAX_UPLOAD_SIZE_MB", "50"))
+    allowed_image_types = {
+        image_type.strip()
+        for image_type in os.getenv(
+            "ALLOWED_IMAGE_TYPES", "image/jpeg,image/png,image/webp"
+        ).split(",")
+        if image_type.strip()
+    }
     
     for file in files:
         file_path = batch_dir / file.filename
+        contents = await file.read()
+        validate_image_upload(file, contents, max_upload_size_mb, allowed_image_types)
         with open(file_path, 'wb') as f:
-            shutil.copyfileobj(file.file, f)
+            f.write(contents)
         image_paths.append(str(file_path))
     
     # Запуск асинхронной обработки

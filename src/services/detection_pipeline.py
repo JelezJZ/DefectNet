@@ -1,13 +1,35 @@
 from datetime import datetime
 from pathlib import Path
 import uuid
+from typing import Optional, Set
 
 import cv2
 import numpy as np
 from fastapi import HTTPException, UploadFile
 
 
-def validate_image_upload(file: UploadFile, contents: bytes, max_upload_size_mb: int) -> None:
+def _detect_mime_by_magic_bytes(contents: bytes) -> Optional[str]:
+    if contents.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+
+    if contents.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+
+    if len(contents) >= 12 and contents[0:4] == b"RIFF" and contents[8:12] == b"WEBP":
+        return "image/webp"
+
+    if contents.startswith(b"GIF87a") or contents.startswith(b"GIF89a"):
+        return "image/gif"
+
+    return None
+
+
+def validate_image_upload(
+    file: UploadFile,
+    contents: bytes,
+    max_upload_size_mb: int,
+    allowed_image_types: Optional[Set[str]] = None,
+) -> None:
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
 
@@ -19,6 +41,22 @@ def validate_image_upload(file: UploadFile, contents: bytes, max_upload_size_mb:
         raise HTTPException(
             status_code=413,
             detail=f"File too large. Maximum allowed size is {max_upload_size_mb} MB",
+        )
+
+    actual_mime = _detect_mime_by_magic_bytes(contents)
+    if not actual_mime:
+        raise HTTPException(status_code=400, detail="Unsupported or corrupted image format")
+
+    if allowed_image_types and actual_mime not in allowed_image_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported image type '{actual_mime}'. Allowed: {sorted(allowed_image_types)}",
+        )
+
+    if file.content_type != actual_mime:
+        raise HTTPException(
+            status_code=400,
+            detail=f"MIME type mismatch: declared '{file.content_type}', detected '{actual_mime}'",
         )
 
 

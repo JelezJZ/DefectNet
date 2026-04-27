@@ -1,6 +1,6 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from ultralytics import YOLO
 from pathlib import Path
@@ -20,6 +20,8 @@ from src.auth.jwt_handler import get_current_user
 import csv
 import io
 from dotenv import load_dotenv
+from collections import defaultdict, deque
+from threading import Lock
 from src.services.detection_pipeline import (
     validate_image_upload,
     save_uploaded_image,
@@ -44,13 +46,64 @@ app = FastAPI(
 )
 
 # CORS
+environment = os.getenv("ENVIRONMENT", "development").strip().lower()
+raw_allowed_origins = os.getenv("ALLOWED_ORIGINS", "*")
+allowed_origins = [origin.strip() for origin in raw_allowed_origins.split(",") if origin.strip()]
+
+if environment == "production" and "*" in allowed_origins:
+    raise RuntimeError("ALLOWED_ORIGINS cannot contain '*' in production")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("ALLOWED_ORIGINS", "*").split(","),
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+rate_limit_per_minute = int(os.getenv("RATE_LIMIT_PER_MINUTE", "100"))
+rate_limit_window_seconds = 60
+rate_limit_hits = defaultdict(deque)
+rate_limit_lock = Lock()
+
+
+@app.middleware("http")
+async def ip_rate_limit_middleware(request: Request, call_next):
+    path = request.url.path
+
+    if (
+        path.startswith("/css/")
+        or path.startswith("/js/")
+        or path.startswith("/results/")
+        or path.startswith("/uploads/")
+        or path.startswith("/docs")
+        or path.startswith("/redoc")
+        or path.startswith("/openapi.json")
+        or path.startswith("/health")
+    ):
+        return await call_next(request)
+
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.time()
+
+    with rate_limit_lock:
+        timestamps = rate_limit_hits[client_ip]
+        while timestamps and now - timestamps[0] > rate_limit_window_seconds:
+            timestamps.popleft()
+
+        if len(timestamps) >= rate_limit_per_minute:
+            retry_after = max(1, int(rate_limit_window_seconds - (now - timestamps[0])))
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "detail": f"Rate limit exceeded. Max {rate_limit_per_minute} requests per minute per IP"
+                },
+                headers={"Retry-After": str(retry_after)},
+            )
+
+        timestamps.append(now)
+
+    return await call_next(request)
 
 # Статические файлы (frontend)
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -183,7 +236,14 @@ async def _process_detection(
 
         contents = await file.read()
         max_upload_size_mb = int(os.getenv("MAX_UPLOAD_SIZE_MB", "50"))
-        validate_image_upload(file, contents, max_upload_size_mb)
+        allowed_image_types = {
+            image_type.strip()
+            for image_type in os.getenv(
+                "ALLOWED_IMAGE_TYPES", "image/jpeg,image/png,image/webp"
+            ).split(",")
+            if image_type.strip()
+        }
+        validate_image_upload(file, contents, max_upload_size_mb, allowed_image_types)
         upload_path = save_uploaded_image(contents, file.filename, UPLOAD_DIR)
         img = decode_image(contents)
 
