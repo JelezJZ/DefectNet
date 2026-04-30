@@ -217,6 +217,8 @@ async def health_check():
 async def _process_detection(
     file: UploadFile,
     confidence: float,
+    iou_threshold: float,
+    image_size: int,
     model_name: str,
     save_image: bool,
     db: Session,
@@ -251,8 +253,6 @@ async def _process_detection(
         upload_path = save_uploaded_image(contents, file.filename, UPLOAD_DIR)
         img = decode_image(contents)
 
-        image_size = int(os.getenv("IMAGE_SIZE", "1024"))
-        iou_threshold = float(os.getenv("IOU_THRESHOLD", "0.45"))
         augment = os.getenv("AUGMENT", "True").lower() == "true"
 
         results = run_inference(selected_model, img, confidence, image_size, iou_threshold, augment)
@@ -297,13 +297,32 @@ async def _process_detection(
 
         return response
 
+    except HTTPException:
+        raise
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Detection error: {str(e)}")
+
+
+def _validate_detection_params(confidence: float, iou: float, imgsz: int) -> None:
+    if not 0.0 <= confidence <= 1.0:
+        raise HTTPException(status_code=422, detail="confidence must be between 0.0 and 1.0")
+
+    if not 0.0 <= iou <= 1.0:
+        raise HTTPException(status_code=422, detail="iou must be between 0.0 and 1.0")
+
+    if imgsz < 320 or imgsz > 4096:
+        raise HTTPException(status_code=422, detail="imgsz must be between 320 and 4096")
+
+    if imgsz % 32 != 0:
+        raise HTTPException(status_code=422, detail="imgsz must be a multiple of 32")
 
 @app.post("/detect")
 async def detect_defects(
     file: UploadFile = File(...),
     confidence: float = 0.25,
+    iou: float = 0.45,
+    imgsz: int = 1024,
     model_name: str = "default",
     save_image: bool = True,
     db: Session = Depends(get_db),
@@ -319,12 +338,15 @@ async def detect_defects(
         db: Зависимость БД
         current_user: Текущий пользователь
     """
-    return await _process_detection(file, confidence, model_name, save_image, db, current_user)
+    _validate_detection_params(confidence, iou, imgsz)
+    return await _process_detection(file, confidence, iou, imgsz, model_name, save_image, db, current_user)
 
 @app.post("/batch-detect")
 async def batch_detect(
     files: List[UploadFile] = File(...),
     confidence: float = 0.25,
+    iou: float = 0.45,
+    imgsz: int = 1024,
     model_name: str = "default",
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -335,6 +357,8 @@ async def batch_detect(
     if len(files) > max_batch_size:
         raise HTTPException(status_code=400, detail=f"Maximum {max_batch_size} images per batch")
 
+    _validate_detection_params(confidence, iou, imgsz)
+
     results_list = []
 
     for file in files:
@@ -343,6 +367,8 @@ async def batch_detect(
             result = await _process_detection(
                 file,
                 confidence,
+                iou,
+                imgsz,
                 model_name,
                 save_image=True,
                 db=db,

@@ -25,6 +25,7 @@ function initEventListeners() {
     // Single detection
     document.getElementById('fileInput').addEventListener('change', handleFileSelect);
     document.getElementById('confidenceSlider').addEventListener('input', updateConfidenceValue);
+    document.getElementById('iouSlider').addEventListener('input', updateIouValue);
     document.getElementById('analyzeBtn').addEventListener('click', analyzeImage);
 
     // Drag & Drop
@@ -45,6 +46,8 @@ function initEventListeners() {
 
     // Batch
     document.getElementById('batchFileInput').addEventListener('change', handleBatchFileSelect);
+    document.getElementById('batchConfidenceSlider').addEventListener('input', updateBatchConfidenceValue);
+    document.getElementById('batchIouSlider').addEventListener('input', updateBatchIouValue);
 
     // Compare
     document.getElementById('compareFileInput').addEventListener('change', handleCompareFileSelect);
@@ -292,6 +295,18 @@ function updateConfidenceValue(e) {
     document.getElementById('confidenceValue').textContent = e.target.value;
 }
 
+function updateIouValue(e) {
+    document.getElementById('iouValue').textContent = e.target.value;
+}
+
+function updateBatchConfidenceValue(e) {
+    document.getElementById('batchConfidenceValue').textContent = e.target.value;
+}
+
+function updateBatchIouValue(e) {
+    document.getElementById('batchIouValue').textContent = e.target.value;
+}
+
 async function analyzeImage() {
     if (!selectedFile) {
         alert('Please select an image first');
@@ -306,10 +321,12 @@ async function analyzeImage() {
     formData.append('file', selectedFile);
     
     const confidence = document.getElementById('confidenceSlider').value;
+    const iou = document.getElementById('iouSlider').value;
+    const imgsz = document.getElementById('imgszInput').value;
     const modelName = document.getElementById('singleModelSelect')?.value || 'default';
     
     try {
-        const response = await fetch(`${API_URL}/detect?confidence=${confidence}&model_name=${encodeURIComponent(modelName)}&save_image=true`, {
+        const response = await fetch(`${API_URL}/detect?confidence=${confidence}&iou=${iou}&imgsz=${imgsz}&model_name=${encodeURIComponent(modelName)}&save_image=true`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${authToken}`
@@ -499,10 +516,13 @@ async function processBatch() {
     batchFiles.forEach(file => {
         formData.append('files', file);
     });
+    const confidence = document.getElementById('batchConfidenceSlider')?.value || '0.25';
+    const iou = document.getElementById('batchIouSlider')?.value || '0.45';
+    const imgsz = document.getElementById('batchImgszInput')?.value || '1024';
     const modelName = document.getElementById('batchModelSelect')?.value || 'default';
 
     try {
-        const response = await fetch(`${API_URL}/batch-detect?confidence=0.25&model_name=${encodeURIComponent(modelName)}`, {
+        const response = await fetch(`${API_URL}/batch-detect?confidence=${confidence}&iou=${iou}&imgsz=${imgsz}&model_name=${encodeURIComponent(modelName)}`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${authToken}`
