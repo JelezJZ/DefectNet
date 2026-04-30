@@ -19,6 +19,7 @@ from src.api.models_routes import router as model_router
 from src.auth.jwt_handler import get_current_user
 import csv
 import io
+import logging
 from dotenv import load_dotenv
 from collections import defaultdict, deque
 from threading import Lock
@@ -35,9 +36,12 @@ from src.services.detection_pipeline import (
 from src.services.detection_response import build_detection_response
 from src.services.inspection_persistence import save_inspection_and_stats
 from src.services.model_registry import discover_model_paths, get_or_load_model
+from src.core.logging_config import setup_logging
 
 # Load environment variables
 load_dotenv()
+setup_logging()
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="PCB Defect Detection API",
@@ -179,7 +183,7 @@ async def load_model():
         default_model_path=model_path,
         models_config_path=BASE_DIR / "src" / "models" / "models_config.json",
     )
-    print(f"✅ Model loaded from {model_path}")
+    logger.info("Model loaded from %s", model_path)
 
 @app.get("/")
 async def root():

@@ -2,13 +2,16 @@ from celery import Celery
 from celery.schedules import crontab
 import os
 from dotenv import load_dotenv
+from src.core.logging_config import setup_logging
 
 load_dotenv()
+setup_logging()
 
 celery_app = Celery(
     'pcb_defect_detection',
     broker=os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0'),
-    backend=os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
+    backend=os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0'),
+    include=['src.tasks.detection_tasks', 'src.tasks.cleanup_tasks'],
 )
 
 celery_app.conf.update(
@@ -19,14 +22,13 @@ celery_app.conf.update(
     enable_utc=True,
 )
 
-# Периодические задачи
+# Periodic cleanup of old temporary artifacts.
+cleanup_hour = int(os.getenv('CLEANUP_SCHEDULE_HOUR', '2'))
+cleanup_minute = int(os.getenv('CLEANUP_SCHEDULE_MINUTE', '0'))
+
 celery_app.conf.beat_schedule = {
-    'cleanup-old-results': {
-        'task': 'src.tasks.cleanup_tasks.cleanup_old_results',
-        'schedule': crontab(hour=2, minute=0),  # Каждый день в 2:00
-    },
-    'generate-daily-report': {
-        'task': 'src.tasks.report_tasks.generate_daily_report',
-        'schedule': crontab(hour=0, minute=0),  # Каждый день в полночь
-    },
+    'cleanup-old-temp-files': {
+        'task': 'src.tasks.cleanup_tasks.cleanup_old_temp_files',
+        'schedule': crontab(hour=cleanup_hour, minute=cleanup_minute),
+    }
 }

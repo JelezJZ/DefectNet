@@ -1,7 +1,11 @@
 from ultralytics import YOLO
 from pathlib import Path
 import json
+import logging
 from typing import List
+
+
+logger = logging.getLogger(__name__)
 
 class ModelManager:
     """Управление несколькими моделями"""
@@ -25,7 +29,7 @@ class ModelManager:
                     'metrics': model_info.get('metrics', {}),
                     'is_active': model_info.get('is_active', True)
                 }
-                print(f"✅ Loaded model: {model_name} (v{model_info['version']})")
+                logger.info("Loaded model %s (v%s)", model_name, model_info['version'])
     
     def predict(self, image, model_name: str, **kwargs):
         """Предсказание с конкретной моделью"""
