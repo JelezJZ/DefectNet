@@ -418,6 +418,9 @@ function displayResults(data) {
 
     document.getElementById('resultsSection').classList.add('active');
     document.getElementById('exportBtn').style.display = 'inline-block';
+    document.getElementById('exportJsonBtn').style.display = 'inline-block';
+    document.getElementById('exportImageBtn').style.display = 'inline-block';
+    document.getElementById('imageExportFormat').style.display = 'inline-block';
 }
 
 function reset() {
@@ -428,6 +431,9 @@ function reset() {
     document.getElementById('previewSection').classList.remove('active');
     document.getElementById('resultsSection').classList.remove('active');
     document.getElementById('exportBtn').style.display = 'none';
+    document.getElementById('exportJsonBtn').style.display = 'none';
+    document.getElementById('exportImageBtn').style.display = 'none';
+    document.getElementById('imageExportFormat').style.display = 'none';
     document.getElementById('originalImage').src = '';
     document.getElementById('resultImage').src = '';
 }
@@ -439,7 +445,11 @@ async function exportPDF() {
     }
 
     try {
-        const response = await fetch(`${API_URL}/export/pdf/${currentInspectionId}`);
+        const response = await fetch(`${API_URL}/export/pdf/${currentInspectionId}`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
         
         if (!response.ok) {
             throw new Error('Export failed');
@@ -452,6 +462,64 @@ async function exportPDF() {
         a.download = `inspection_${currentInspectionId}.pdf`;
         a.click();
         
+    } catch (error) {
+        alert('Export failed: ' + error.message);
+    }
+}
+
+async function exportJSON() {
+    if (!currentInspectionId) {
+        alert('No inspection to export');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/export/json/${currentInspectionId}`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('JSON export failed');
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `inspection_${currentInspectionId}.json`;
+        a.click();
+    } catch (error) {
+        alert('Export failed: ' + error.message);
+    }
+}
+
+async function exportResultImage() {
+    if (!currentInspectionId) {
+        alert('No inspection to export');
+        return;
+    }
+
+    const imageFormat = document.getElementById('imageExportFormat')?.value || 'jpeg';
+
+    try {
+        const response = await fetch(`${API_URL}/export/image/${currentInspectionId}?format=${encodeURIComponent(imageFormat)}`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Image export failed');
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `inspection_${currentInspectionId}.${imageFormat === 'png' ? 'png' : 'jpg'}`;
+        a.click();
     } catch (error) {
         alert('Export failed: ' + error.message);
     }

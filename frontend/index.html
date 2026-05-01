@@ -159,6 +159,16 @@
                     <button class="btn btn-success" onclick="exportPDF()" id="exportBtn" style="display: none;">
                         📄 Экспорт PDF
                     </button>
+                    <button class="btn btn-success" onclick="exportJSON()" id="exportJsonBtn" style="display: none;">
+                        🧾 Экспорт JSON
+                    </button>
+                    <select id="imageExportFormat" class="control-select" style="max-width: 180px; display: none;">
+                        <option value="jpeg">JPEG</option>
+                        <option value="png">PNG</option>
+                    </select>
+                    <button class="btn btn-success" onclick="exportResultImage()" id="exportImageBtn" style="display: none;">
+                        🖼️ Экспорт изображения
+                    </button>
                 </div>
 
                 <div class="loading" id="loading">

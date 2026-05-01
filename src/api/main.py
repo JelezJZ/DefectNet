@@ -19,10 +19,12 @@ from src.api.models_routes import router as model_router
 from src.auth.jwt_handler import get_current_user
 import csv
 import io
+import json
 import logging
 from dotenv import load_dotenv
 from collections import defaultdict, deque
 from threading import Lock
+from PIL import Image
 from src.services.detection_pipeline import (
     validate_image_upload,
     save_uploaded_image,
@@ -558,6 +560,105 @@ async def export_pdf_report(inspection_id: str, db: Session = Depends(get_db), c
     generator.generate_inspection_report(report_data, output_path)
 
     return FileResponse(output_path, filename=f"report_{inspection_id}.pdf")
+
+
+@app.get("/export/json/{inspection_id}")
+async def export_inspection_json(inspection_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Экспорт одной проверки в JSON-файл"""
+
+    output_dir = os.getenv("EXPORTS_DIR", "storage/exports")
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
+    if not inspection:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+
+    payload = {
+        "inspection_id": inspection.id,
+        "timestamp": inspection.timestamp.isoformat() if inspection.timestamp else None,
+        "image_info": {
+            "filename": inspection.filename,
+            "width": inspection.image_width,
+            "height": inspection.image_height,
+        },
+        "detection_params": {
+            "confidence_threshold": inspection.confidence_threshold,
+        },
+        "results": {
+            "status": inspection.status,
+            "total_defects": inspection.total_defects,
+            "severity_breakdown": inspection.severity_breakdown or {},
+            "detections": inspection.detections or [],
+        },
+        "meta": {
+            "processing_time": inspection.processing_time,
+            "operator_id": inspection.operator_id,
+            "original_image_path": inspection.original_image_path,
+            "result_image_path": inspection.result_image_path,
+        },
+    }
+
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename = f"inspection_{inspection_id}_{timestamp}.json"
+    output_path = os.path.join(output_dir, filename)
+
+    with open(output_path, "w", encoding="utf-8") as file_obj:
+        json.dump(payload, file_obj, ensure_ascii=False, indent=2)
+
+    return FileResponse(
+        output_path,
+        media_type="application/json",
+        filename=filename,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@app.get("/export/image/{inspection_id}")
+async def export_result_image(
+    inspection_id: str,
+    format: str = "jpeg",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Экспорт изображения результата в PNG/JPEG"""
+
+    image_format = format.strip().lower()
+    if image_format not in {"png", "jpeg", "jpg"}:
+        raise HTTPException(status_code=422, detail="format must be one of: png, jpeg, jpg")
+
+    output_dir = os.getenv("EXPORTS_DIR", "storage/exports")
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
+    if not inspection:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+
+    if not inspection.result_image_path:
+        raise HTTPException(status_code=404, detail="No result image for this inspection")
+
+    source_path = Path(inspection.result_image_path)
+    if not source_path.exists():
+        raise HTTPException(status_code=404, detail="Result image file not found")
+
+    normalized_format = "jpeg" if image_format == "jpg" else image_format
+    extension = "jpg" if normalized_format == "jpeg" else "png"
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename = f"inspection_{inspection_id}_{timestamp}.{extension}"
+    output_path = Path(output_dir) / filename
+
+    with Image.open(source_path) as img:
+        export_image = img.convert("RGB") if normalized_format == "jpeg" else img
+        export_image.save(output_path, format=normalized_format.upper())
+
+    media_type = "image/jpeg" if normalized_format == "jpeg" else "image/png"
+    return FileResponse(
+        str(output_path),
+        media_type=media_type,
+        filename=filename,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 @app.get("/export/csv")
 async def export_inspections_csv(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
