@@ -39,6 +39,7 @@ from src.services.detection_response import build_detection_response
 from src.services.inspection_persistence import save_inspection_and_stats
 from src.services.model_registry import discover_model_paths, get_or_load_model
 from src.core.logging_config import setup_logging
+from src.services.detection_cache import build_cache_key, get_cached_result, set_cached_result
 
 # Load environment variables
 load_dotenv()
@@ -267,6 +268,15 @@ async def _process_detection(
         }
         validate_image_upload(file, contents, max_upload_size_mb, allowed_image_types)
 
+        cache_key = build_cache_key(
+            image_bytes=contents,
+            model_name=selected_model_name,
+            confidence=confidence,
+            iou=iou_threshold,
+            imgsz=image_size,
+        )
+        cached_result = get_cached_result(cache_key)
+
         now = datetime.now()
         date_dir = now.strftime("%Y/%m/%d")
         session_dir_name = inspection_id
@@ -280,15 +290,42 @@ async def _process_detection(
 
         augment = os.getenv("AUGMENT", "True").lower() == "true"
 
-        results = run_inference(selected_model, img, confidence, image_size, iou_threshold, augment)
-        detections, severity_counts = build_detections(results, selected_model.names, DEFECT_INFO)
-        total_defects = len(detections)
-        result_image_path, result_image_url = save_result_visualization(
-            results, detections, save_image, result_session_dir
-        )
-        if result_image_url:
-            result_image_url = f"/results/{date_dir}/{session_dir_name}/{Path(result_image_path).name}"
-        inspection_status = get_inspection_status(severity_counts)
+        if cached_result:
+            detections = cached_result["detections"]
+            severity_counts = cached_result["severity_counts"]
+            total_defects = cached_result["total_defects"]
+            inspection_status = cached_result["inspection_status"]
+
+            cached_result_image_path = cached_result.get("result_image_path")
+            result_image_path = None
+            result_image_url = None
+
+            if save_image and cached_result_image_path and Path(cached_result_image_path).exists():
+                result_image_path = Path(cached_result_image_path)
+                path_parts = result_image_path.relative_to(RESULTS_DIR).parts
+                result_image_url = "/results/" + "/".join(path_parts)
+        else:
+            results = run_inference(selected_model, img, confidence, image_size, iou_threshold, augment)
+            detections, severity_counts = build_detections(results, selected_model.names, DEFECT_INFO)
+            total_defects = len(detections)
+            result_image_path, result_image_url = save_result_visualization(
+                results, detections, save_image, result_session_dir
+            )
+            if result_image_url:
+                result_image_url = f"/results/{date_dir}/{session_dir_name}/{Path(result_image_path).name}"
+            inspection_status = get_inspection_status(severity_counts)
+
+            set_cached_result(
+                cache_key,
+                {
+                    "detections": detections,
+                    "severity_counts": severity_counts,
+                    "total_defects": total_defects,
+                    "inspection_status": inspection_status,
+                    "result_image_path": str(result_image_path) if result_image_path else None,
+                },
+            )
+
         selected_model_version = model_versions.get(selected_model_name, "unknown")
 
         response = build_detection_response(
