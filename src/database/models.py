@@ -53,6 +53,8 @@ class Inspection(Base):
     image_width = Column(Integer)
     image_height = Column(Integer)
     confidence_threshold = Column(Float)
+    model_name = Column(String, nullable=True)
+    model_version = Column(String, nullable=True)
     total_defects = Column(Integer)
     status = Column(String)
     severity_breakdown = Column(JSON)

@@ -126,6 +126,7 @@ app.include_router(model_router)
 model = None
 model_cache = {}
 available_model_paths = {}
+model_versions = {}
 
 # Storage directories from env
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -173,7 +174,7 @@ DEFECT_INFO = {
 @app.on_event("startup")
 async def load_model():
     """Загрузите модель при старте приложения"""
-    global model, model_cache, available_model_paths
+    global model, model_cache, available_model_paths, model_versions
     model_path = os.getenv("MODEL_PATH", "src/models/best.pt")
 
     if not Path(model_path).exists():
@@ -185,6 +186,18 @@ async def load_model():
         default_model_path=model_path,
         models_config_path=BASE_DIR / "src" / "models" / "models_config.json",
     )
+    model_versions = {name: "unknown" for name in available_model_paths.keys()}
+
+    models_config_path = BASE_DIR / "src" / "models" / "models_config.json"
+    if models_config_path.exists():
+        try:
+            with open(models_config_path, "r", encoding="utf-8") as file_obj:
+                config = json.load(file_obj)
+            for name, info in config.get("models", {}).items():
+                if name in model_versions:
+                    model_versions[name] = str(info.get("version", "unknown"))
+        except Exception:
+            logger.warning("Failed to load model versions from %s", models_config_path)
     logger.info("Model loaded from %s", model_path)
 
 @app.get("/")
@@ -231,6 +244,7 @@ async def _process_detection(
     """
 
     start_time = time.time()
+    inspection_id = str(uuid.uuid4())
 
     if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
@@ -252,7 +266,16 @@ async def _process_detection(
             if image_type.strip()
         }
         validate_image_upload(file, contents, max_upload_size_mb, allowed_image_types)
-        upload_path = save_uploaded_image(contents, file.filename, UPLOAD_DIR)
+
+        now = datetime.now()
+        date_dir = now.strftime("%Y/%m/%d")
+        session_dir_name = inspection_id
+        upload_session_dir = UPLOAD_DIR / date_dir / session_dir_name
+        result_session_dir = RESULTS_DIR / date_dir / session_dir_name
+        upload_session_dir.mkdir(parents=True, exist_ok=True)
+        result_session_dir.mkdir(parents=True, exist_ok=True)
+
+        upload_path = save_uploaded_image(contents, file.filename, upload_session_dir)
         img = decode_image(contents)
 
         augment = os.getenv("AUGMENT", "True").lower() == "true"
@@ -261,16 +284,21 @@ async def _process_detection(
         detections, severity_counts = build_detections(results, selected_model.names, DEFECT_INFO)
         total_defects = len(detections)
         result_image_path, result_image_url = save_result_visualization(
-            results, detections, save_image, RESULTS_DIR
+            results, detections, save_image, result_session_dir
         )
+        if result_image_url:
+            result_image_url = f"/results/{date_dir}/{session_dir_name}/{Path(result_image_path).name}"
         inspection_status = get_inspection_status(severity_counts)
+        selected_model_version = model_versions.get(selected_model_name, "unknown")
 
         response = build_detection_response(
+            inspection_id=inspection_id,
             filename=file.filename,
             image_width=img.shape[1],
             image_height=img.shape[0],
             confidence_threshold=confidence,
             model_name=selected_model_name,
+            model_version=selected_model_version,
             total_defects=total_defects,
             inspection_status=inspection_status,
             severity_counts=severity_counts,
@@ -286,6 +314,8 @@ async def _process_detection(
             image_width=img.shape[1],
             image_height=img.shape[0],
             confidence_threshold=confidence,
+            model_name=selected_model_name,
+            model_version=selected_model_version,
             total_defects=total_defects,
             inspection_status=inspection_status,
             severity_counts=severity_counts,
@@ -395,20 +425,20 @@ async def batch_detect(
         'results': results_list
     }
 
-@app.get("/results/{filename}")
-async def get_result_image(filename: str):
+@app.get("/results/{file_path:path}")
+async def get_result_image(file_path: str):
     """Получите изображение с результатами"""
-    file_path = RESULTS_DIR / filename
+    file_path = RESULTS_DIR / file_path
 
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Image not found")
 
     return FileResponse(file_path)
 
-@app.get("/uploads/{filename}")
-async def get_original_image(filename: str):
+@app.get("/uploads/{file_path:path}")
+async def get_original_image(file_path: str):
     """Получите оригинальное изображение"""
-    file_path = UPLOAD_DIR / filename
+    file_path = UPLOAD_DIR / file_path
 
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Image not found")

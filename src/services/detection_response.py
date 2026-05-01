@@ -1,13 +1,14 @@
 from datetime import datetime
-import uuid
 
 
 def build_detection_response(
+    inspection_id: str,
     filename: str,
     image_width: int,
     image_height: int,
     confidence_threshold: float,
     model_name: str,
+    model_version: str,
     total_defects: int,
     inspection_status: str,
     severity_counts: dict,
@@ -17,7 +18,7 @@ def build_detection_response(
     return {
         "success": True,
         "timestamp": datetime.now().isoformat(),
-        "inspection_id": str(uuid.uuid4()),
+        "inspection_id": inspection_id,
         "image_info": {
             "filename": filename,
             "width": image_width,
@@ -26,6 +27,7 @@ def build_detection_response(
         "detection_params": {
             "confidence_threshold": confidence_threshold,
             "model": model_name,
+            "model_version": model_version,
         },
         "results": {
             "total_defects": total_defects,
