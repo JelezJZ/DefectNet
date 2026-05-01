@@ -326,12 +326,15 @@ function renderInspectionInModal(data, body) {
         <div class="meta-item"><label>🟢 Low</label><span>${data.severity_breakdown.low || 0}</span></div>
     ` : '';
 
-    const originalImageHtml = data.original_image_path
-        ? `<img src="${API_URL}/uploads/${data.original_image_path.split('/').pop()}" alt="Original">`
+    const originalImageUrl = buildStoredImageUrl(data.original_image_path, 'uploads');
+    const resultImageUrl = buildStoredImageUrl(data.result_image_path, 'results');
+
+    const originalImageHtml = originalImageUrl
+        ? `<img src="${originalImageUrl}" alt="Original">`
         : '<div style="min-height:200px;background:#333;display:flex;align-items:center;justify-content:center;border-radius:10px;color:#888;">Недоступно</div>';
 
-    const resultImageHtml = data.result_image_path
-        ? `<img src="${API_URL}/results/${data.result_image_path.split('/').pop()}" alt="Result">`
+    const resultImageHtml = resultImageUrl
+        ? `<img src="${resultImageUrl}" alt="Result">`
         : '<div style="min-height:200px;background:#333;display:flex;align-items:center;justify-content:center;border-radius:10px;color:#888;">Недоступно</div>';
 
     const defectsHtml = data.detections && data.detections.length > 0
@@ -364,6 +367,28 @@ function renderInspectionInModal(data, body) {
         </div>
         <div class="inspection-defects"><h4>🔎 Дефекты (${data.detections ? data.detections.length : 0})</h4>${defectsHtml}</div>
     `;
+}
+
+function buildStoredImageUrl(storedPath, kind) {
+    if (!storedPath) {
+        return null;
+    }
+
+    const normalizedPath = String(storedPath).replace(/\\/g, '/');
+    const marker = `storage/${kind}/`;
+    const markerIndex = normalizedPath.indexOf(marker);
+
+    if (markerIndex >= 0) {
+        const relativePath = normalizedPath.substring(markerIndex + marker.length);
+        return `${API_URL}/${kind}/${relativePath}`;
+    }
+
+    const fallbackName = normalizedPath.split('/').pop();
+    if (!fallbackName) {
+        return null;
+    }
+
+    return `${API_URL}/${kind}/${fallbackName}`;
 }
 // Helper functions for navbar integration
 function updateUserInfo() {

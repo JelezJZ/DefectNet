@@ -5,32 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PCB Defect Detection System</title>
     <link rel="stylesheet" href="css/index_style.css">
-    
-    <!-- Environment Configuration -->
-    <script>
-        // Default configuration - override in env-config.js if needed
-        window.ENV_CONFIG = {
-            API_URL: 'http://localhost:8000',
-            DEFAULT_CONFIDENCE: '0.25',
-            DEFAULT_IMAGE_SIZE: '1024',
-            MAX_BATCH_SIZE: '20',
-            MAX_FILE_SIZE_MB: '50',
-            ALLOWED_IMAGE_TYPES: 'image/jpeg,image/png,image/webp',
-            TOKEN_EXPIRE_MINUTES: '1440',
-            HEALTH_CHECK_ENABLED: 'true'
-        };
-    </script>
 </head>
 <body>
     <!-- Navbar -->
     <div class="navbar">
         <div class="navbar-brand">🔍 PCB Defect Detection</div>
         <ul class="navbar-menu">
-            <li><a href="#" class="active" onclick="switchPage('detection')">Детекция</a></li>
-            <li><a href="#" onclick="switchPage('batch')">Пакетная обработка</a></li>
-            <li><a href="#" onclick="switchPage('history')">История</a></li>
-            <li><a href="#" onclick="switchPage('models')">Модели</a></li>
-            <li><a href="/dashboard" onclick="switchPage('analitics')">Аналитика</a></li>
+            <li><a href="#" class="active" onclick="switchPage('detection', event)">Детекция</a></li>
+            <li><a href="#" onclick="switchPage('batch', event)">Пакетная обработка</a></li>
+            <li><a href="#" onclick="switchPage('history', event)">История</a></li>
+            <li><a href="#" onclick="switchPage('models', event)">Модели</a></li>
+            <li><a href="/dashboard">Аналитика</a></li>
         </ul>
         <div class="user-menu">
             <div class="user-avatar" id="userAvatar">U</div>

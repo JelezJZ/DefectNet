@@ -19,7 +19,22 @@ const DEFECT_INFO = {
 document.addEventListener('DOMContentLoaded', () => {
     checkAuth();
     initEventListeners();
+    applyTabFromUrl();
 });
+
+function applyTabFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab');
+    if (!tab) {
+        return;
+    }
+
+    const allowedTabs = new Set(['single', 'batch', 'history', 'compare']);
+    if (allowedTabs.has(tab)) {
+        switchTab(tab);
+        setActiveMenuByTab(tab);
+    }
+}
 
 function initEventListeners() {
     // Single detection
@@ -241,6 +256,36 @@ function switchTab(tabName) {
     if (tabName === 'history') {
         loadHistory();
     }
+
+    setActiveMenuByTab(tabName);
+
+    const params = new URLSearchParams(window.location.search);
+    params.set('tab', tabName);
+    const nextUrl = `${window.location.pathname}?${params.toString()}`;
+    window.history.replaceState({}, '', nextUrl);
+}
+
+function setActiveMenuByTab(tabName) {
+    const tabToPage = {
+        single: 'detection',
+        batch: 'batch',
+        history: 'history',
+        compare: 'models'
+    };
+
+    const targetPage = tabToPage[tabName];
+    if (!targetPage) {
+        return;
+    }
+
+    document.querySelectorAll('.navbar-menu a').forEach((a) => {
+        a.classList.remove('active');
+    });
+
+    const targetLink = document.querySelector(`.navbar-menu a[onclick*="'${targetPage}'"]`);
+    if (targetLink) {
+        targetLink.classList.add('active');
+    }
 }
 
 function getTabIndex(tabName) {
@@ -252,10 +297,17 @@ function capitalize(str) {
     return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
-function switchPage(page) {
+function switchPage(page, event) {
+    if (event) {
+        event.preventDefault();
+    }
+
     // Обновить активный пункт меню
     document.querySelectorAll('.navbar-menu a').forEach(a => a.classList.remove('active'));
-    event.target.classList.add('active');
+    const eventTarget = event?.currentTarget || event?.target;
+    if (eventTarget) {
+        eventTarget.classList.add('active');
+    }
 
     // Переключить соответствующую вкладку
     const pageToTab = {
@@ -266,7 +318,8 @@ function switchPage(page) {
         'analytics': 'analytics'
     };
 
-    switchTab(pageToTab[page] || 'single');
+    const selectedTab = pageToTab[page] || 'single';
+    switchTab(selectedTab);
 }
 
 // ============ SINGLE DETECTION ============
@@ -749,12 +802,15 @@ function renderInspectionModal(data) {
         </div>
     ` : '';
 
-    const originalImageHtml = data.original_image_path
-        ? `<img src="${API_URL}/uploads/${data.original_image_path.split('/').pop()}" alt="Original">`
+    const originalImageUrl = buildStoredImageUrl(data.original_image_path, 'uploads');
+    const resultImageUrl = buildStoredImageUrl(data.result_image_path, 'results');
+
+    const originalImageHtml = originalImageUrl
+        ? `<img src="${originalImageUrl}" alt="Original">`
         : '<div style="min-height:200px;background:#f0f0f0;display:flex;align-items:center;justify-content:center;border-radius:10px;color:#888;">Изображение недоступно</div>';
 
-    const resultImageHtml = data.result_image_path
-        ? `<img src="${API_URL}/results/${data.result_image_path.split('/').pop()}" alt="Result">`
+    const resultImageHtml = resultImageUrl
+        ? `<img src="${resultImageUrl}" alt="Result">`
         : '<div style="min-height:200px;background:#f0f0f0;display:flex;align-items:center;justify-content:center;border-radius:10px;color:#888;">Изображение недоступно</div>';
 
     const defectsHtml = data.detections && data.detections.length > 0
@@ -833,6 +889,28 @@ function renderInspectionModal(data) {
             <button class="btn btn-success" onclick="exportPDFById('${data.id}')">📄 Экспорт PDF</button>
         </div>
     `;
+}
+
+function buildStoredImageUrl(storedPath, kind) {
+    if (!storedPath) {
+        return null;
+    }
+
+    const normalizedPath = String(storedPath).replace(/\\/g, '/');
+    const marker = `storage/${kind}/`;
+    const markerIndex = normalizedPath.indexOf(marker);
+
+    if (markerIndex >= 0) {
+        const relativePath = normalizedPath.substring(markerIndex + marker.length);
+        return `${API_URL}/${kind}/${relativePath}`;
+    }
+
+    const fallbackName = normalizedPath.split('/').pop();
+    if (!fallbackName) {
+        return null;
+    }
+
+    return `${API_URL}/${kind}/${fallbackName}`;
 }
 
 function closeInspectionModal() {
