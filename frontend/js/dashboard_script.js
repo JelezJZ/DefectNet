@@ -102,6 +102,7 @@ function addActivityItem(inspection) {
     const feed = document.getElementById('activityFeed');
     const statusClass = inspection.status === 'failed' ? 'failed' :
                         inspection.status === 'warning' ? 'warning' : '';
+    const date = new Date(inspection.timestamp);
 
     const item = document.createElement('div');
     item.className = `activity-item ${statusClass}`;
@@ -112,7 +113,7 @@ function addActivityItem(inspection) {
         ID: ${inspection.inspection_id}<br>
         Status: ${inspection.status.toUpperCase()}<br>
         Defects: ${inspection.total_defects}<br>
-        <small>${new Date().toLocaleTimeString()}</small>
+        <small>${date.toLocaleString()}</small>
     `;
 
     feed.insertBefore(item, feed.firstChild);
@@ -156,22 +157,30 @@ async function loadHistory() {
                 'Authorization': `Bearer ${authToken}`
             }
         });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
         const data = await response.json();
+
+        const inspections = data.inspections || [];
         
         // Заполнить activity feed
         const feed = document.getElementById('activityFeed');
-        feed.innerHTML = '';
+        if (feed) feed.innerHTML = '';
         
-        data.inspections.forEach(insp => {
+        [...inspections].reverse().forEach(insp => {
             addActivityItem({
                 inspection_id: insp.id,
                 status: insp.status,
-                total_defects: insp.total_defects
+                total_defects: insp.total_defects,
+                timestamp: insp.timestamp
             });
         });
         
         // Обновить timeline
-        updateTimelineChart(data.inspections);
+        updateTimelineChart(inspections);
         
     } catch (error) {
         console.error('Error loading history:', error);

@@ -5,6 +5,10 @@ let compareFile = null;
 let currentInspectionId = null;
 let authToken = localStorage.getItem('authToken');
 let currentUser = null;
+const paginationState = {
+    currentPage: 1,
+    limit: 20
+};
 
 const DEFECT_INFO = {
     'mouse_bite': { name_ru: 'Мышиный укус', severity: 'medium', description: 'Неровные края на печатной плате' },
@@ -699,12 +703,15 @@ function displayBatchResults(data) {
 }
 
 // ============ HISTORY ============
-async function loadHistory() {
+async function loadHistory(page = 1) {
+    paginationState.currentPage = page;
+    const offset = (page - 1) * paginationState.limit;
+
     const tbody = document.getElementById('historyTableBody');
     tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px;">Loading...</td></tr>';
 
     try {
-        const response = await fetch(`${API_URL}/history?limit=50`, {
+        const response = await fetch(`${API_URL}/history?offset=${offset}&limit=${paginationState.limit}`, {
             headers: {
                 'Authorization': `Bearer ${authToken}`
             }
@@ -718,6 +725,7 @@ async function loadHistory() {
         
         if (data.inspections.length === 0) {
             tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px;">No inspections found</td></tr>';
+            renderPaginationControls(0);
             return;
         }
 
@@ -743,10 +751,55 @@ async function loadHistory() {
         }).join('');
 
         tbody.innerHTML = rowsHTML;
+        const totalItems = data.total || 50; 
+        renderPaginationControls(totalItems);
 
     } catch (error) {
         tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 40px; color: #dc3545;">Error: ${error.message}</td></tr>`;
+        renderPaginationControls(0);
     }
+}
+
+function renderPaginationControls(totalItems) {
+    let container = document.getElementById('historyPagination');
+    
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'historyPagination';
+        container.style.cssText = 'display: flex; justify-content: center; gap: 5px; margin-top: 15px;';
+        const table = document.getElementById('historyTableBody').closest('table');
+        table.parentNode.insertBefore(container, table.nextSibling);
+    }
+
+    container.innerHTML = '';
+    if (totalItems <= paginationState.limit) return;
+
+    const totalPages = Math.ceil(totalItems / paginationState.limit);
+    const current = paginationState.currentPage;
+
+    const prevBtn = document.createElement('button');
+    prevBtn.className = 'btn';
+    prevBtn.textContent = '«';
+    prevBtn.disabled = current === 1;
+    prevBtn.onclick = () => loadHistory(current - 1);
+    container.appendChild(prevBtn);
+
+    for (let i = 1; i <= totalPages; i++) {
+        const pageBtn = document.createElement('button');
+        pageBtn.className = i === current ? 'btn btn-primary active' : 'btn';
+        pageBtn.style.padding = '5px 20px';
+        pageBtn.textContent = i;
+        
+        pageBtn.onclick = () => loadHistory(i);
+        container.appendChild(pageBtn);
+    }
+
+    const nextBtn = document.createElement('button');
+    nextBtn.className = 'btn';
+    nextBtn.textContent = '»';
+    nextBtn.disabled = current === totalPages;
+    nextBtn.onclick = () => loadHistory(current + 1);
+    container.appendChild(nextBtn);
 }
 
 async function viewInspection(inspectionId) {
