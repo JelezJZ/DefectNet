@@ -176,7 +176,7 @@ DEFECT_INFO = {
 async def load_model():
     """Загрузите модель при старте приложения"""
     global model, model_cache, available_model_paths, model_versions
-    model_path = os.getenv("MODEL_PATH", "src/models/best.pt")
+    model_path = os.getenv("MODEL_PATH", "models/trained/pcb_defect_detector_v13_best.pt")
 
     if not Path(model_path).exists():
         raise RuntimeError(f"Model not found at {model_path}")
@@ -796,8 +796,3 @@ if __name__ == "__main__":
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "8000"))
     uvicorn.run("src.api.main:app", host=host, port=port, reload=True)
-    
-    # Команда запуска:
-    # export PYTHONPATH=$PYTHONPATH:$(pwd)/src  # Для Linux/macOS
-    # или для Windows (PowerShell): $env:PYTHONPATH += ";$pwd\src"=
-    # python -m src.api.main

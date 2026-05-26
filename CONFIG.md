@@ -26,18 +26,19 @@ This guide explains all available environment variables for DefectNet.
 | `HOST` | `0.0.0.0` | Server bind address |
 | `PORT` | `8000` | Server port |
 | `DEBUG` | `True` | Enable debug mode |
+| `ENVIRONMENT` | `development` | Environment name (`development`/`production`) |
 | `WORKERS` | `1` | Number of worker processes |
 
 ### Database Configuration
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DATABASE_URL` | `sqlite:///./storage/defect_detection.db` | Database connection string |
+| `DATABASE_URL` | `sqlite:///pcb_defects.db` | Database connection string |
 | `DB_POOL_SIZE` | `5` | Database connection pool size |
 | `DB_MAX_OVERFLOW` | `10` | Max overflow connections |
 
 **Database URL Examples:**
-- SQLite: `sqlite:///./storage/defect_detection.db`
+- SQLite: `sqlite:///pcb_defects.db`
 - PostgreSQL: `postgresql://user:password@localhost:5432/defectnet`
 - MySQL: `mysql://user:password@localhost:3306/defectnet`
 
@@ -53,7 +54,7 @@ This guide explains all available environment variables for DefectNet.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MODEL_PATH` | `src/models/best.pt` | Path to YOLO model file |
+| `MODEL_PATH` | `models/trained/best.pt` | Path to YOLO model file |
 | `DEFAULT_CONFIDENCE` | `0.25` | Default detection confidence threshold |
 | `IMAGE_SIZE` | `1024` | Input image size for model |
 | `IOU_THRESHOLD` | `0.45` | IoU threshold for NMS |
@@ -82,6 +83,14 @@ This guide explains all available environment variables for DefectNet.
 |----------|---------|-------------|
 | `ALLOWED_ORIGINS` | `*` | Allowed CORS origins (comma-separated) |
 
+If `ENVIRONMENT=production`, wildcard `*` in `ALLOWED_ORIGINS` is rejected at startup.
+
+### API Security
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RATE_LIMIT_PER_MINUTE` | `100` | Per-IP request limit per minute |
+
 **Example for production:**
 ```
 ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
@@ -109,11 +118,24 @@ ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
 |----------|---------|-------------|
 | `LOG_LEVEL` | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL) |
 | `LOG_FORMAT` | `text` | Log format (text, json) |
+| `LOG_DIR` | `logs` | Directory for rotating log files |
+| `LOG_FILE` | `app.log` | Log filename |
+| `LOG_MAX_BYTES` | `10485760` | Max size of one log file before rotation |
+| `LOG_BACKUP_COUNT` | `5` | Number of rotated files to keep |
+
+### Cleanup Scheduler
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CLEANUP_MAX_AGE_HOURS` | `24` | TTL for temp/batch artifacts |
+| `CLEANUP_SCHEDULE_HOUR` | `2` | Daily cleanup hour (Celery beat) |
+| `CLEANUP_SCHEDULE_MINUTE` | `0` | Daily cleanup minute (Celery beat) |
 
 ## Production Checklist
 
 - [ ] Generate secure `JWT_SECRET_KEY`
 - [ ] Set `DEBUG=False`
+- [ ] Set `ENVIRONMENT=production`
 - [ ] Configure proper `DATABASE_URL` (PostgreSQL recommended)
 - [ ] Set specific `ALLOWED_ORIGINS` (not `*`)
 - [ ] Adjust `MAX_UPLOAD_SIZE_MB` based on your needs

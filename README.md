@@ -27,8 +27,7 @@ cp .env.example .env
 # Скачать модели
 python scripts/download_models.py
 
-# Обучить модель (опционально)
-python notebooks/01_train_yolo.ipynb
+# При необходимости: обучайте через Jupyter (notebooks/)
 ```
 
 ### Конфигурация
@@ -44,14 +43,13 @@ openssl rand -hex 32
 ```
 
 📖 Подробное руководство: [CONFIG.md](CONFIG.md)  
-🚀 Чеклист для продакшена: [ENV_SETUP.md](ENV_SETUP.md)
+🚀 Быстрый статус env-настроек: [ENV_SETUP.md](ENV_SETUP.md)
 
 ## Запуск
 
 ### Backend (API)
 
 ```bash
-export PYTHONPATH=$PYTHONPATH:$(pwd)/src
 python -m src.api.main
 ```
 
@@ -60,21 +58,38 @@ API доступен по адресу: http://localhost:8000
 
 ### Frontend
 
-Откройте `frontend/index.html` в браузере или используйте простой сервер:
-
-```bash
-cd frontend && python -m http.server 3000
-```
+Frontend отдается самим FastAPI-приложением:
+- Главная: `http://localhost:8000/`
+- Дашборд: `http://localhost:8000/dashboard`
 
 ## API Endpoints
 
 | Endpoint | Описание |
 |----------|----------|
+| `POST /auth/register` | Регистрация пользователя |
+| `POST /auth/login` | Вход и получение JWT |
+| `GET /auth/me` | Данные текущего пользователя |
 | `POST /detect` | Детекция дефектов на изображении |
+| `POST /batch-detect` | Синхронная пакетная детекция |
+| `POST /batch/upload` | Асинхронная пакетная обработка (Celery) |
+| `GET /batch/status/{batch_id}` | Статус Celery batch-задачи |
+| `GET /history/{inspection_id}` | Детали конкретной проверки |
 | `GET /health` | Проверка статуса API |
 | `GET /history` | История проверок |
 | `GET /analytics/dashboard` | Дашборд статистики |
+| `GET /statistics` | Базовая сводная статистика |
 | `GET /defect-info` | Информация о типах дефектов |
+| `GET /models/available` | Модели для `detect` |
+| `GET /models/list` | Подробная информация по моделям |
+| `POST /models/compare` | Сравнение моделей на одном изображении |
+| `GET /export/pdf/{inspection_id}` | Экспорт отчета PDF |
+| `GET /export/json/{inspection_id}` | Экспорт одной проверки в JSON-файл |
+| `GET /export/image/{inspection_id}?format=png|jpeg` | Экспорт изображения результата |
+| `GET /export/csv` | Экспорт истории в CSV |
+| `GET /results/{file_path:path}` | Доступ к изображениям результата |
+| `GET /uploads/{file_path:path}` | Доступ к исходным изображениям |
+| `GET /dashboard` | HTML-дашборд аналитики |
+| `GET /` | HTML-интерфейс детекции |
 
 ## Структура проекта
 
@@ -95,6 +110,11 @@ DefectNet/
 - Python 3.10+
 - CUDA (опционально, для GPU)
 - 4GB+ RAM
+
+## Важно
+
+- В продакшене `ALLOWED_ORIGINS=*` запрещен (приложение завершится при `ENVIRONMENT=production`).
+- Для запуска нужны рабочие `DATABASE_URL` и `MODEL_PATH` в `.env`.
 
 ## Лицензия
 
