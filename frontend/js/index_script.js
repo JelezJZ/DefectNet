@@ -1177,7 +1177,12 @@ function displayComparisonResults(data) {
 }
 
 // Health check при загрузке
-fetch(`${API_URL}/health`)
+fetch(`${API_URL}/health`, {
+        method: "GET",
+        headers: {
+            'Authorization': `Bearer ${authToken}`
+        }
+    })
     .then(res => res.json())
     .then(data => console.log('API Status:', data))
     .catch(err => console.error('API not available:', err));
