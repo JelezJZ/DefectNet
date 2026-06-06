@@ -33,6 +33,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 async function checkAuth() {
     if (!authToken) {
+        showLoginForm();
         return false;
     }
 
@@ -49,10 +50,13 @@ async function checkAuth() {
             return true;
         } else {
             localStorage.removeItem('authToken');
+            authToken = null;
+            showLoginForm();
             return false;
         }
     } catch (error) {
         console.error('Auth check failed:', error);
+        showLoginForm();
         return false;
     }
 }

@@ -47,7 +47,7 @@ async def upload_batch(files: List[UploadFile] = File(...), current_user: User =
     }
 
 @router.get("/status/{batch_id}")
-async def get_batch_status(batch_id: str):
+async def get_batch_status(batch_id: str, current_user: User = Depends(get_current_user)):
     """Проверка статуса пакетной обработки"""
     
     result = AsyncResult(batch_id)

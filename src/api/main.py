@@ -223,7 +223,7 @@ async def dashboard():
     return {"error": "Dashboard not found"}
 
 @app.get("/health")
-async def health_check():
+async def health_check(current_user: User = Depends(get_current_user)):
     """Проверка работоспособности"""
     return {
         "status": "healthy",
@@ -467,7 +467,7 @@ async def batch_detect(
     }
 
 @app.get("/results/{file_path:path}")
-async def get_result_image(file_path: str):
+async def get_result_image(file_path: str, current_user: User = Depends(get_current_user)):
     """Получите изображение с результатами"""
     file_path = RESULTS_DIR / file_path
 
@@ -477,7 +477,7 @@ async def get_result_image(file_path: str):
     return FileResponse(file_path)
 
 @app.get("/uploads/{file_path:path}")
-async def get_original_image(file_path: str):
+async def get_original_image(file_path: str, current_user: User = Depends(get_current_user)):
     """Получите оригинальное изображение"""
     file_path = UPLOAD_DIR / file_path
 
@@ -487,7 +487,7 @@ async def get_original_image(file_path: str):
     return FileResponse(file_path)
 
 @app.get("/defect-info")
-async def get_defect_info():
+async def get_defect_info(current_user: User = Depends(get_current_user)):
     """Получите информацию о типах дефектов"""
     return DEFECT_INFO
 
