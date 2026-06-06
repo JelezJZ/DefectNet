@@ -1,5 +1,5 @@
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, JSON, Boolean
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime, timezone
 import bcrypt
@@ -10,7 +10,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-Base = declarative_base()
+class Base(DeclarativeBase):
+    pass
 
 class User(Base):
     """Модель пользователя"""
