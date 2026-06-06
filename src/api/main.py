@@ -4,6 +4,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from ultralytics import YOLO
 from pathlib import Path
+from contextlib import asynccontextmanager
 import uuid
 from datetime import datetime
 from typing import List
@@ -46,10 +47,45 @@ load_dotenv()
 setup_logging()
 logger = logging.getLogger(__name__)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Загрузите модель при старте приложения"""
+    global model, model_cache, available_model_paths, model_versions
+    model_path = os.getenv("MODEL_PATH", "models/trained/pcb_defect_detector_v13_best.pt")
+
+    if not Path(model_path).exists():
+        raise RuntimeError(f"Model not found at {model_path}")
+
+    model = YOLO(model_path)
+    model_cache = {"default": model}
+    available_model_paths = discover_model_paths(
+        default_model_path=model_path,
+        models_config_path=BASE_DIR / "src" / "models" / "models_config.json",
+    )
+    model_versions = {name: "unknown" for name in available_model_paths.keys()}
+
+    models_config_path = BASE_DIR / "src" / "models" / "models_config.json"
+    if models_config_path.exists():
+        try:
+            with open(models_config_path, "r", encoding="utf-8") as file_obj:
+                config = json.load(file_obj)
+            for name, info in config.get("models", {}).items():
+                if name in model_versions:
+                    model_versions[name] = str(info.get("version", "unknown"))
+        except Exception:
+            logger.warning("Failed to load model versions from %s", models_config_path)
+    logger.info("Model loaded from %s", model_path)
+
+    yield
+
+    model_cache.clear()
+    logger.info("Resources cleaned up")
+
 app = FastAPI(
     title="PCB Defect Detection API",
     description="Автоматическое обнаружение дефектов печатных плат",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # CORS
@@ -72,7 +108,6 @@ rate_limit_per_minute = int(os.getenv("RATE_LIMIT_PER_MINUTE", "100"))
 rate_limit_window_seconds = 60
 rate_limit_hits = defaultdict(deque)
 rate_limit_lock = Lock()
-
 
 @app.middleware("http")
 async def ip_rate_limit_middleware(request: Request, call_next):
@@ -171,35 +206,6 @@ DEFECT_INFO = {
         'description': 'Остатки меди на плате'
     }
 }
-
-@app.on_event("startup")
-async def load_model():
-    """Загрузите модель при старте приложения"""
-    global model, model_cache, available_model_paths, model_versions
-    model_path = os.getenv("MODEL_PATH", "models/trained/pcb_defect_detector_v13_best.pt")
-
-    if not Path(model_path).exists():
-        raise RuntimeError(f"Model not found at {model_path}")
-
-    model = YOLO(model_path)
-    model_cache = {"default": model}
-    available_model_paths = discover_model_paths(
-        default_model_path=model_path,
-        models_config_path=BASE_DIR / "src" / "models" / "models_config.json",
-    )
-    model_versions = {name: "unknown" for name in available_model_paths.keys()}
-
-    models_config_path = BASE_DIR / "src" / "models" / "models_config.json"
-    if models_config_path.exists():
-        try:
-            with open(models_config_path, "r", encoding="utf-8") as file_obj:
-                config = json.load(file_obj)
-            for name, info in config.get("models", {}).items():
-                if name in model_versions:
-                    model_versions[name] = str(info.get("version", "unknown"))
-        except Exception:
-            logger.warning("Failed to load model versions from %s", models_config_path)
-    logger.info("Model loaded from %s", model_path)
 
 @app.get("/")
 async def root():
