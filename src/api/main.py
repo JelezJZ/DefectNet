@@ -247,6 +247,10 @@ async def _process_detection(
     start_time = time.time()
     inspection_id = str(uuid.uuid4())
 
+    req_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    req_unique_id = uuid.uuid4().hex[:8]
+    req_base_filename = f"{req_timestamp}_{req_unique_id}"
+
     if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
@@ -285,7 +289,7 @@ async def _process_detection(
         upload_session_dir.mkdir(parents=True, exist_ok=True)
         result_session_dir.mkdir(parents=True, exist_ok=True)
 
-        upload_path = save_uploaded_image(contents, file.filename, upload_session_dir)
+        upload_path = save_uploaded_image(contents, file.filename, upload_session_dir, req_base_filename)
         img = decode_image(contents)
 
         augment = os.getenv("AUGMENT", "True").lower() == "true"
@@ -309,10 +313,10 @@ async def _process_detection(
             detections, severity_counts = build_detections(results, selected_model.names, DEFECT_INFO)
             total_defects = len(detections)
             result_image_path, result_image_url = save_result_visualization(
-                results, detections, save_image, result_session_dir
+                results, detections, save_image, result_session_dir, req_base_filename
             )
             if result_image_url:
-                result_image_url = f"/results/{date_dir}/{session_dir_name}/{Path(result_image_path).name}"
+                result_image_url = f"/results/{date_dir}/{session_dir_name}/result_{req_base_filename}.jpg"
             inspection_status = get_inspection_status(severity_counts)
 
             set_cached_result(

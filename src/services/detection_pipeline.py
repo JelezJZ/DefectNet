@@ -60,11 +60,9 @@ def validate_image_upload(
         )
 
 
-def save_uploaded_image(contents: bytes, original_filename: str, upload_dir: Path) -> Path:
-    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    unique_id = uuid.uuid4().hex[:8]
+def save_uploaded_image(contents: bytes, original_filename: str, upload_dir: Path, base_filename: str) -> Path:
     extension = Path(original_filename).suffix or ".jpg"
-    upload_filename = f"upload_{timestamp_str}_{unique_id}{extension}"
+    upload_filename = f"upload_{base_filename}{extension}"
     upload_path = upload_dir / upload_filename
 
     with open(upload_path, "wb") as file_obj:
@@ -121,13 +119,12 @@ def build_detections(results, class_names, defect_info: dict):
     return detections, severity_counts
 
 
-def save_result_visualization(results, detections: list, save_image: bool, results_dir: Path):
+def save_result_visualization(results, detections: list, save_image: bool, results_dir: Path, base_filename: str):
     if not save_image or not detections:
         return None, None
 
     result_img = results[0].plot()
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    result_filename = f"result_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
+    result_filename = f"result_{base_filename}.jpg"
     result_path = results_dir / result_filename
     cv2.imwrite(str(result_path), result_img)
 
