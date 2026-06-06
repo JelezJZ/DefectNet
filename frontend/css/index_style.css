@@ -627,6 +627,16 @@ body {
     color: #333;
 }
 
+.img-placeholder {
+    min-height: 200px;
+    background: #f0f0f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    color: #888;
+}
+
 .inspection-images {
     display: grid;
     grid-template-columns: 1fr 1fr;

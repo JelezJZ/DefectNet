@@ -13,7 +13,6 @@ const paginationState = {
 const DEFECT_INFO = {
     'mouse_bite': { name_ru: 'Мышиный укус', severity: 'medium', description: 'Неровные края на печатной плате' },
     'spur': { name_ru: 'Выступ', severity: 'low', description: 'Выступ на проводнике' },
-    'missing_hole': { name_ru: 'Отсутствующее отверстие', severity: 'critical', description: 'Отверстие не просверлено или отсутствует' },
     'short': { name_ru: 'Короткое замыкание', severity: 'critical', description: 'Нежелательное соединение проводников' },
     'open_circuit': { name_ru: 'Разрыв цепи', severity: 'critical', description: 'Разрыв проводника' },
     'spurious_copper': { name_ru: 'Лишняя медь', severity: 'medium', description: 'Остатки меди на плате' }
@@ -407,13 +406,35 @@ async function analyzeImage() {
     }
 }
 
-function displayResults(data) {
+async function displayResults(data) {
     const results = data.results;
     
     // Показать изображение
     if (data.result_image) {
-        document.getElementById('resultImage').src = API_URL + data.result_image;
-        document.getElementById('previewSection').classList.add('active');
+        try {
+            const response = await fetch(API_URL + data.result_image, {
+                headers: {
+                    'Authorization': `Bearer ${authToken}`
+                }
+            });
+            
+            if (!response.ok) throw new Error('Не удалось загрузить изображение');
+
+            // Превращаем ответ в Blob (бинарные данные)
+            const blob = await response.blob();
+            // Создаем временную URL-ссылку на этот Blob в памяти браузера
+            const objectUrl = URL.createObjectURL(blob);
+            
+            const imgElement = document.getElementById('resultImage');
+            imgElement.src = objectUrl;
+            
+            // Освобождаем память, когда картинка загрузится
+            imgElement.onload = () => URL.revokeObjectURL(objectUrl);
+
+            document.getElementById('previewSection').classList.add('active');
+        } catch (err) {
+            console.error("Ошибка загрузки картинки:", err);
+        }
     }
 
     // Статус
@@ -821,14 +842,14 @@ async function viewInspection(inspectionId) {
         }
 
         const data = await response.json();
-        renderInspectionModal(data);
+        await renderInspectionModal(data);
 
     } catch (error) {
         body.innerHTML = `<div class="alert alert-error">Ошибка: ${error.message}</div>`;
     }
 }
 
-function renderInspectionModal(data) {
+async function renderInspectionModal(data) {
     const body = document.getElementById('inspectionModalBody');
 
     const statusClass = `status-${data.status}`;
@@ -859,13 +880,15 @@ function renderInspectionModal(data) {
     const resultImageUrl = buildStoredImageUrl(data.result_image_path, 'results');
 
     const originalImageHtml = originalImageUrl
-        ? `<img src="${originalImageUrl}" alt="Original">`
-        : '<div style="min-height:200px;background:#f0f0f0;display:flex;align-items:center;justify-content:center;border-radius:10px;color:#888;">Изображение недоступно</div>';
+        ? `<img id="modalImgOriginal" src="" alt="Original" style="display:none;">
+           <div id="modalImgOriginalLoader" class="img-placeholder">Загрузка...</div>`
+        : '<div class="img-placeholder">Изображение недоступно</div>';
 
     const resultImageHtml = resultImageUrl
-        ? `<img src="${resultImageUrl}" alt="Result">`
-        : '<div style="min-height:200px;background:#f0f0f0;display:flex;align-items:center;justify-content:center;border-radius:10px;color:#888;">Изображение недоступно</div>';
-
+        ? `<img id="modalImgResult" src="" alt="Result" style="display:none;">
+           <div id="modalImgResultLoader" class="img-placeholder">Загрузка...</div>`
+        : '<div class="img-placeholder">Изображение недоступно</div>';
+        
     const defectsHtml = data.detections && data.detections.length > 0
         ? data.detections.map((defect, index) => {
             const defectInfo = DEFECT_INFO[defect.class] || { name_ru: defect.class, description: '' };
@@ -942,6 +965,13 @@ function renderInspectionModal(data) {
             <button class="btn btn-success" onclick="exportPDFById('${data.id}')">📄 Экспорт PDF</button>
         </div>
     `;
+
+    if (originalImageUrl) {
+        loadProtectedImageIntoElement(originalImageUrl, 'modalImgOriginal', 'modalImgOriginalLoader');
+    }
+    if (resultImageUrl) {
+        loadProtectedImageIntoElement(resultImageUrl, 'modalImgResult', 'modalImgResultLoader');
+    }
 }
 
 function buildStoredImageUrl(storedPath, kind) {
@@ -964,6 +994,33 @@ function buildStoredImageUrl(storedPath, kind) {
     }
 
     return `${API_URL}/${kind}/${fallbackName}`;
+}
+
+async function loadProtectedImageIntoElement(url, imgId, loaderId) {
+    try {
+        const response = await fetch(url, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (!response.ok) throw new Error('Failed');
+
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        
+        const img = document.getElementById(imgId);
+        const loader = document.getElementById(loaderId);
+        
+        if (img) {
+            img.src = objectUrl;
+            img.style.display = 'block';
+            if (loader) loader.style.display = 'none';
+            
+            img.onload = () => URL.revokeObjectURL(objectUrl);
+        }
+    } catch (err) {
+        const loader = document.getElementById(loaderId);
+        if (loader) loader.textContent = 'Ошибка загрузки';
+        console.error("Error loading protected image:", err);
+    }
 }
 
 function closeInspectionModal() {

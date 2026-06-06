@@ -9,7 +9,6 @@ let currentUser = null;
 const DEFECT_INFO = {
     'mouse_bite': { name_ru: 'Мышиный укус', severity: 'medium', description: 'Неровные края на печатной плате' },
     'spur': { name_ru: 'Выступ', severity: 'low', description: 'Выступ на проводнике' },
-    'missing_hole': { name_ru: 'Отсутствующее отверстие', severity: 'critical', description: 'Отверстие не просверлено или отсутствует' },
     'short': { name_ru: 'Короткое замыкание', severity: 'critical', description: 'Нежелательное соединение проводников' },
     'open_circuit': { name_ru: 'Разрыв цепи', severity: 'critical', description: 'Разрыв проводника' },
     'spurious_copper': { name_ru: 'Лишняя медь', severity: 'medium', description: 'Остатки меди на плате' }
@@ -323,13 +322,13 @@ async function viewInspectionDetail(inspectionId) {
         if (!response.ok) throw new Error('Failed to load inspection');
 
         const data = await response.json();
-        renderInspectionInModal(data, body);
+        await renderInspectionInModal(data, body);
     } catch (error) {
         body.innerHTML = `<p style="color: #dc3545;">Ошибка: ${error.message}</p>`;
     }
 }
 
-function renderInspectionInModal(data, body) {
+async function renderInspectionInModal(data, body) {
     const statusText = { 'passed': '✅ PASSED', 'warning': '⚠️ WARNING', 'failed': '❌ FAILED' };
     const date = new Date(data.timestamp);
 
@@ -343,12 +342,14 @@ function renderInspectionInModal(data, body) {
     const resultImageUrl = buildStoredImageUrl(data.result_image_path, 'results');
 
     const originalImageHtml = originalImageUrl
-        ? `<img src="${originalImageUrl}" alt="Original">`
-        : '<div style="min-height:200px;background:#333;display:flex;align-items:center;justify-content:center;border-radius:10px;color:#888;">Недоступно</div>';
+        ? `<img id="modalImgOriginal" src="" alt="Original" style="display:none;">
+           <div id="modalImgOriginalLoader" class="img-placeholder">Загрузка...</div>`
+        : '<div class="img-placeholder">Изображение недоступно</div>';
 
     const resultImageHtml = resultImageUrl
-        ? `<img src="${resultImageUrl}" alt="Result">`
-        : '<div style="min-height:200px;background:#333;display:flex;align-items:center;justify-content:center;border-radius:10px;color:#888;">Недоступно</div>';
+        ? `<img id="modalImgResult" src="" alt="Result" style="display:none;">
+           <div id="modalImgResultLoader" class="img-placeholder">Загрузка...</div>`
+        : '<div class="img-placeholder">Изображение недоступно</div>';
 
     const defectsHtml = data.detections && data.detections.length > 0
         ? data.detections.map((d, i) => {
@@ -380,6 +381,13 @@ function renderInspectionInModal(data, body) {
         </div>
         <div class="inspection-defects"><h4>🔎 Дефекты (${data.detections ? data.detections.length : 0})</h4>${defectsHtml}</div>
     `;
+
+    if (originalImageUrl) {
+        loadProtectedImageIntoElement(originalImageUrl, 'modalImgOriginal', 'modalImgOriginalLoader');
+    }
+    if (resultImageUrl) {
+        loadProtectedImageIntoElement(resultImageUrl, 'modalImgResult', 'modalImgResultLoader');
+    }
 }
 
 function buildStoredImageUrl(storedPath, kind) {
@@ -403,6 +411,34 @@ function buildStoredImageUrl(storedPath, kind) {
 
     return `${API_URL}/${kind}/${fallbackName}`;
 }
+
+async function loadProtectedImageIntoElement(url, imgId, loaderId) {
+    try {
+        const response = await fetch(url, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (!response.ok) throw new Error('Failed');
+
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        
+        const img = document.getElementById(imgId);
+        const loader = document.getElementById(loaderId);
+        
+        if (img) {
+            img.src = objectUrl;
+            img.style.display = 'block';
+            if (loader) loader.style.display = 'none';
+            
+            img.onload = () => URL.revokeObjectURL(objectUrl);
+        }
+    } catch (err) {
+        const loader = document.getElementById(loaderId);
+        if (loader) loader.textContent = 'Ошибка загрузки';
+        console.error("Error loading protected image:", err);
+    }
+}
+
 // Helper functions for navbar integration
 function updateUserInfo() {
     const usernameEl = document.getElementById('username');
