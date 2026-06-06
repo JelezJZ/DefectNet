@@ -77,7 +77,6 @@ Frontend отдается самим FastAPI-приложением:
 | `GET /health` | Проверка статуса API |
 | `GET /history` | История проверок |
 | `GET /analytics/dashboard` | Дашборд статистики |
-| `GET /statistics` | Базовая сводная статистика |
 | `GET /defect-info` | Информация о типах дефектов |
 | `GET /models/available` | Модели для `detect` |
 | `GET /models/list` | Подробная информация по моделям |

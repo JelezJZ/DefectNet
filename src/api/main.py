@@ -499,18 +499,6 @@ async def get_available_models(current_user: User = Depends(get_current_user)):
         "models": sorted(available_model_paths.keys())
     }
 
-@app.get("/statistics")
-async def get_statistics():
-    """Статистика по сохранённым результатам"""
-    # Здесь можно добавить подключение к БД для реальной статистики
-    # Пока заглушка
-    return {
-        'total_inspections': 0,
-        'total_defects_found': 0,
-        'defect_breakdown': {},
-        'pass_rate': 0.0
-    }
-
 @app.get("/history")
 async def get_history(limit: int = 50, offset: int = 0, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Получите историю проверок"""
