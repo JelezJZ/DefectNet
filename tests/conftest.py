@@ -1,11 +1,15 @@
 import os
-import sys
 import uuid
 from pathlib import Path
-
 import pytest
-from fastapi.testclient import TestClient
 
+os.environ["DATABASE_URL"] = "sqlite:///./pcb_defects_test.db"
+
+from fastapi.testclient import TestClient
+from src.api.main import app
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+TEST_IMAGE_PATH = BASE_DIR / "datasets" / "test_image.jpg"
 
 def get_test_model_path():
     root = Path(__file__).resolve().parent.parent
@@ -18,10 +22,7 @@ def get_test_model_path():
 
 @pytest.fixture(scope="session")
 def client():
-    os.environ["DATABASE_URL"] = "sqlite:///./pcb_defects_test.db"
     os.environ["MODEL_PATH"] = get_test_model_path()
-
-    from src.api.main import app
 
     with TestClient(app) as test_client:
         yield test_client
@@ -30,7 +31,7 @@ def client():
         os.remove("pcb_defects_test.db")
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def auth_headers(client):
     user_id = uuid.uuid4().hex[:8]
     payload = {
@@ -45,3 +46,29 @@ def auth_headers(client):
     
     token = response.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
+
+@pytest.fixture(scope="session")
+def created_inspection(client, auth_headers):
+    payload = {"model_name": "default"}
+    with open(TEST_IMAGE_PATH, "rb") as f:
+        files = {"file": ("image.jpg", f, "image/jpeg")}
+        r = client.post("/detect", params=payload, files=files, headers=auth_headers)
+    
+    assert r.status_code == 200
+    data = r.json()
+    return data
+
+@pytest.fixture(autouse=True)
+def reset_rate_limit_and_cache():
+    from src.api.main import rate_limit_hits, rate_limit_lock
+    with rate_limit_lock:
+        rate_limit_hits.clear()
+    
+    try:
+        from src.services.detection_cache import _CACHE, _LOCK
+        with _LOCK:
+            _CACHE.clear()
+    except ImportError:
+        pass
+        
+    yield
