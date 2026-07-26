@@ -3,7 +3,8 @@ from pydantic import BaseModel, EmailStr
 from datetime import datetime
 import uuid
 from sqlalchemy.orm import Session
-from src.database.models import get_db, User
+from src.database.models import User
+from src.database.database import get_db
 from src.auth.jwt_handler import create_access_token, get_current_user
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])

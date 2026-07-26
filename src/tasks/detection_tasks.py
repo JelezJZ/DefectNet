@@ -5,9 +5,6 @@ from src.tasks.celery_config import celery_app
 import cv2
 import logging
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
 
 logger = logging.getLogger(__name__)
 

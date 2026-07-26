@@ -1,10 +1,8 @@
 from celery import Celery
 from celery.schedules import crontab
 import os
-from dotenv import load_dotenv
 from src.core.logging_config import setup_logging
 
-load_dotenv()
 setup_logging()
 
 celery_app = Celery(
