@@ -1,14 +1,12 @@
-from datetime import datetime
-from pathlib import Path
 import uuid
-from typing import Optional, Set
+from pathlib import Path
 
 import cv2
 import numpy as np
 from fastapi import HTTPException, UploadFile
 
 
-def _detect_mime_by_magic_bytes(contents: bytes) -> Optional[str]:
+def _detect_mime_by_magic_bytes(contents: bytes) -> str | None:
     if contents.startswith(b"\xff\xd8\xff"):
         return "image/jpeg"
 
@@ -28,7 +26,7 @@ def validate_image_upload(
     file: UploadFile,
     contents: bytes,
     max_upload_size_mb: int,
-    allowed_image_types: Optional[Set[str]] = None,
+    allowed_image_types: set[str] | None = None,
 ) -> None:
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
@@ -45,7 +43,9 @@ def validate_image_upload(
 
     actual_mime = _detect_mime_by_magic_bytes(contents)
     if not actual_mime:
-        raise HTTPException(status_code=400, detail="Unsupported or corrupted image format")
+        raise HTTPException(
+            status_code=400, detail="Unsupported or corrupted image format"
+        )
 
     if allowed_image_types and actual_mime not in allowed_image_types:
         raise HTTPException(
@@ -60,7 +60,9 @@ def validate_image_upload(
         )
 
 
-def save_uploaded_image(contents: bytes, original_filename: str, upload_dir: Path, base_filename: str) -> Path:
+def save_uploaded_image(
+    contents: bytes, original_filename: str, upload_dir: Path, base_filename: str
+) -> Path:
     extension = Path(original_filename).suffix or ".jpg"
     upload_filename = f"upload_{base_filename}{extension}"
     upload_path = upload_dir / upload_filename
@@ -79,8 +81,12 @@ def decode_image(contents: bytes):
     return img
 
 
-def run_inference(model, img, confidence: float, image_size: int, iou_threshold: float, augment: bool):
-    return model(img, conf=confidence, imgsz=image_size, iou=iou_threshold, augment=augment)
+def run_inference(
+    model, img, confidence: float, image_size: int, iou_threshold: float, augment: bool
+):
+    return model(
+        img, conf=confidence, imgsz=image_size, iou=iou_threshold, augment=augment
+    )
 
 
 def build_detections(results, class_names, defect_info: dict):
@@ -119,7 +125,9 @@ def build_detections(results, class_names, defect_info: dict):
     return detections, severity_counts
 
 
-def save_result_visualization(results, detections: list, save_image: bool, results_dir: Path, base_filename: str):
+def save_result_visualization(
+    results, detections: list, save_image: bool, results_dir: Path, base_filename: str
+):
     if not save_image or not detections:
         return None, None
 

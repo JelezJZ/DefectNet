@@ -1,10 +1,9 @@
-from datetime import datetime
 import logging
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
 from src.database.models import DefectStatistics, Inspection
-
 
 logger = logging.getLogger(__name__)
 

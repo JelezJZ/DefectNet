@@ -6,7 +6,6 @@ from pathlib import Path
 
 from src.tasks.celery_config import celery_app
 
-
 logger = logging.getLogger(__name__)
 
 

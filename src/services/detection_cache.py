@@ -3,7 +3,6 @@ import os
 from collections import OrderedDict
 from threading import Lock
 
-
 _CACHE = OrderedDict()
 _LOCK = Lock()
 _MAX_ITEMS = int(os.getenv("DETECTION_CACHE_MAX_ITEMS", "500"))

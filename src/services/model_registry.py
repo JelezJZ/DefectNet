@@ -1,5 +1,5 @@
-from pathlib import Path
 import json
+from pathlib import Path
 
 from fastapi import HTTPException
 from ultralytics import YOLO
