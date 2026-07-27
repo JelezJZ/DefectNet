@@ -2,13 +2,17 @@ import json
 import logging
 import logging.config
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
+
+        dt = datetime.fromtimestamp(record.created, tz=timezone.utc)
+
         payload = {
-            "timestamp": self.formatTime(record, self.datefmt),
+            "timestamp": dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -17,7 +21,7 @@ class JsonFormatter(logging.Formatter):
         if record.exc_info:
             payload["exc_info"] = self.formatException(record.exc_info)
 
-        return json.dumps(payload, ensure_ascii=True)
+        return json.dumps(payload, ensure_ascii=False)
 
 
 def setup_logging() -> None:
@@ -31,25 +35,20 @@ def setup_logging() -> None:
     log_dir.mkdir(parents=True, exist_ok=True)
     file_path = log_dir / log_file
 
-    text_formatter = {
-        "format": "%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-        "datefmt": "%Y-%m-%d %H:%M:%S",
-    }
-
-    formatters = {
-        "text": text_formatter,
-        "json": {
-            "()": "src.core.logging_config.JsonFormatter",
-            "datefmt": "%Y-%m-%dT%H:%M:%S",
-        },
-    }
-
     selected_formatter = "json" if log_format == "json" else "text"
 
     config = {
         "version": 1,
         "disable_existing_loggers": False,
-        "formatters": formatters,
+        "formatters": {
+            "text": {
+                "format": "%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+                "datefmt": "%Y-%m-%d %H:%M:%S",
+            },
+            "json": {
+                "()": JsonFormatter,
+            },
+        },
         "handlers": {
             "console": {
                 "class": "logging.StreamHandler",
@@ -66,6 +65,17 @@ def setup_logging() -> None:
                 "encoding": "utf-8",
             },
         },
+        "loggers": {
+            "watchfiles": {
+                "level": "WARNING",
+                "propagate": False,
+            },
+            "uvicorn.access": {
+                "handlers": ["console", "file"],
+                "level": log_level,
+                "propagate": False,
+            },
+        },
         "root": {
             "level": log_level,
             "handlers": ["console", "file"],
@@ -73,6 +83,3 @@ def setup_logging() -> None:
     }
 
     logging.config.dictConfig(config)
-
-    if log_format == "json":
-        logging.getLogger("uvicorn.access").handlers = []
