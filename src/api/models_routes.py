@@ -46,6 +46,13 @@ async def compare_models(
     return analysis
 
 
+@router.get("/available")
+async def get_available_models(current_user: User = Depends(get_current_user)):
+    """Список доступных моделей для endpoint /detect"""
+    from src.api.main import available_model_paths
+    return {"models": sorted(available_model_paths.keys())}
+
+
 def calculate_agreement(results: dict) -> dict:
     """Вычислить степень согласованности между моделями"""
     model_names = list(results.keys())

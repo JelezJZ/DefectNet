@@ -538,12 +538,6 @@ async def get_defect_info(current_user: User = Depends(get_current_user)):
     return DEFECT_INFO
 
 
-@app.get("/models/available")
-async def get_available_models(current_user: User = Depends(get_current_user)):
-    """Список доступных моделей для endpoint /detect"""
-    return {"models": sorted(available_model_paths.keys())}
-
-
 @app.get("/analytics/dashboard")
 async def get_analytics(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
