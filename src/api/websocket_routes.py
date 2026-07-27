@@ -2,7 +2,7 @@ from fastapi import WebSocket, WebSocketDisconnect, APIRouter
 from datetime import datetime, timezone
 from src.database.models import Inspection
 from src.services.websocket import manager
-from src.database.models import SessionLocal
+from src.database.database import SessionLocal
 
 router = APIRouter()
 

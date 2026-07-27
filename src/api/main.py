@@ -8,7 +8,8 @@ from contextlib import asynccontextmanager
 import uuid
 from datetime import datetime
 from typing import List
-from src.database.models import Inspection, get_db, User
+from src.database.models import Inspection, User
+from src.database.database import get_db
 import time
 from sqlalchemy.orm import Session
 from src.reports.generator import ReportGenerator

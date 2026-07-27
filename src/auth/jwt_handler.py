@@ -1,15 +1,12 @@
 import os
 from datetime import datetime, timezone, timedelta
-from dotenv import load_dotenv
 from jose import JWTError, jwt
 from fastapi import HTTPException, Security, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional
 from sqlalchemy.orm import Session
-from src.database.models import get_db, User
-
-# Загрузка переменных окружения из .env файла
-load_dotenv()
+from src.database.models import User
+from src.database.database import get_db
 
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-this-in-production")
 ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
