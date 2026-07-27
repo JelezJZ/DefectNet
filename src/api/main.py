@@ -12,21 +12,20 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.orm import Session
 from ultralytics import YOLO
 
+from src.api.analytics_routes import router as analytics_router
 from src.api.auth_routes import router as auth_router
 from src.api.batch_routes import router as batch_router
+from src.api.detect_routes import router as detect_router
 from src.api.export_routes import router as export_router
+from src.api.files_routes import router as file_router
 from src.api.history_routes import router as history_router
 from src.api.models_routes import router as model_router
 from src.api.websocket_routes import router as websocket_router
-from src.api.detect_routes import router as detect_router
-from src.api.files_routes import router as file_router
 from src.auth.jwt_handler import get_current_user
 from src.core.logging_config import setup_logging
-from src.database.database import get_db
-from src.database.models import Inspection, User
+from src.database.models import User
 from src.services.model_registry import discover_model_paths
 
 # Load environment variables
@@ -156,6 +155,7 @@ app.include_router(export_router)
 app.include_router(history_router)
 app.include_router(detect_router)
 app.include_router(file_router)
+app.include_router(analytics_router)
 
 # Глобальная переменная для модели
 model = None
@@ -187,60 +187,10 @@ async def root():
     }
 
 
-@app.get("/dashboard")
-async def dashboard():
-    """Страница дашборда"""
-    dashboard_path = FRONTEND_DIR / "dashboard.html"
-    if dashboard_path.exists():
-        return HTMLResponse(content=dashboard_path.read_text())
-    return {"error": "Dashboard not found"}
-
-
 @app.get("/health")
 async def health_check(current_user: User = Depends(get_current_user)):
     """Проверка работоспособности"""
     return {"status": "healthy", "model_status": "loaded" if model else "not_loaded"}
-
-
-@app.get("/analytics/dashboard")
-async def get_analytics(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
-):
-    """Дашборд с аналитикой"""
-
-    total_inspections = db.query(Inspection).count()
-
-    # Дефекты по типам
-    all_inspections = db.query(Inspection).all()
-    defect_counts = {}
-
-    for insp in all_inspections:
-        if insp.detections:
-            for det in insp.detections:
-                defect_type = det.get("class")
-                defect_counts[defect_type] = defect_counts.get(defect_type, 0) + 1
-
-    # Pass rate
-    passed = db.query(Inspection).filter(Inspection.status == "passed").count()
-    pass_rate = (passed / total_inspections * 100) if total_inspections > 0 else 0
-
-    return {
-        "total_inspections": total_inspections,
-        "total_defects_found": sum(defect_counts.values()),
-        "defect_breakdown": defect_counts,
-        "pass_rate": round(pass_rate, 2),
-        "status_breakdown": {
-            "passed": db.query(Inspection)
-            .filter(Inspection.status == "passed")
-            .count(),
-            "warning": db.query(Inspection)
-            .filter(Inspection.status == "warning")
-            .count(),
-            "failed": db.query(Inspection)
-            .filter(Inspection.status == "failed")
-            .count(),
-        },
-    }
 
 
 if __name__ == "__main__":
