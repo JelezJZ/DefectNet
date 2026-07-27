@@ -668,7 +668,7 @@ async function processBatch() {
     const modelName = document.getElementById('batchModelSelect')?.value || 'default';
 
     try {
-        const response = await fetch(`${API_URL}/batch-detect?confidence=${confidence}&iou=${iou}&imgsz=${imgsz}&model_name=${encodeURIComponent(modelName)}`, {
+        const response = await fetch(`${API_URL}/detect/batch-detect?confidence=${confidence}&iou=${iou}&imgsz=${imgsz}&model_name=${encodeURIComponent(modelName)}`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${authToken}`
