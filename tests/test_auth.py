@@ -43,7 +43,7 @@ def test_login_wrong_password(client, user_data):
     ("/models/list", "get"),
     ("/models/compare", "post"),
     ("/detect", "post"),
-    ("/batch-detect", "post"),
+    ("/detect/batch-detect", "post"),
     ("/models/available", "get"),
     ("/history", "get"),
     ("/history/123", "get"),

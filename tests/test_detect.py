@@ -92,7 +92,7 @@ def test_batch_detect(client, auth_headers):
             ("files", ("image_3.jpg", f3, "image/jpeg"))
         ]
         response = client.post(
-            "/batch-detect",
+            "/detect/batch-detect",
             files=files,
             headers=auth_headers,
         )
@@ -120,7 +120,7 @@ def test_one_bad_file_batch_detect(client, auth_headers):
             ("files", ("image_3.jpg",  io.BytesIO(b"bad_file"), "image/jpeg"))
         ]
         response = client.post(
-            "/batch-detect",
+            "/detect/batch-detect",
             files=files,
             headers=auth_headers,
         )
@@ -146,7 +146,7 @@ def test_exceeded_max_batch_detect(client, auth_headers):
             ("files", (f"image_{i}.jpg", io.BytesIO(image_content), "image/jpeg"))
         )
     response = client.post(
-        "/batch-detect",
+        "/detect/batch-detect",
         files=files,
         headers=auth_headers,
     )
