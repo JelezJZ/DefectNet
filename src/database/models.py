@@ -30,7 +30,7 @@ class User(Base):
     full_name = Column(String)
     role = Column(String, default="operator")  # admin, supervisor, operator
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.now)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     last_login = Column(DateTime, nullable=True)
 
     inspections = relationship("Inspection", back_populates="operator")
