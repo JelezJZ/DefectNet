@@ -8,9 +8,9 @@ from pathlib import Path
 from threading import Lock
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from ultralytics import YOLO
@@ -22,6 +22,7 @@ from src.api.history_routes import router as history_router
 from src.api.models_routes import router as model_router
 from src.api.websocket_routes import router as websocket_router
 from src.api.detect_routes import router as detect_router
+from src.api.files_routes import router as file_router
 from src.auth.jwt_handler import get_current_user
 from src.core.logging_config import setup_logging
 from src.database.database import get_db
@@ -154,6 +155,7 @@ app.include_router(model_router)
 app.include_router(export_router)
 app.include_router(history_router)
 app.include_router(detect_router)
+app.include_router(file_router)
 
 # Глобальная переменная для модели
 model = None
@@ -198,32 +200,6 @@ async def dashboard():
 async def health_check(current_user: User = Depends(get_current_user)):
     """Проверка работоспособности"""
     return {"status": "healthy", "model_status": "loaded" if model else "not_loaded"}
-
-
-@app.get("/results/{file_path:path}")
-async def get_result_image(
-    file_path: str, current_user: User = Depends(get_current_user)
-):
-    """Получите изображение с результатами"""
-    file_path = RESULTS_DIR / file_path
-
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Image not found")
-
-    return FileResponse(file_path)
-
-
-@app.get("/uploads/{file_path:path}")
-async def get_original_image(
-    file_path: str, current_user: User = Depends(get_current_user)
-):
-    """Получите оригинальное изображение"""
-    file_path = UPLOAD_DIR / file_path
-
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Image not found")
-
-    return FileResponse(file_path)
 
 
 @app.get("/analytics/dashboard")
