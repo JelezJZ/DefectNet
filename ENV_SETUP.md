@@ -1,34 +1,34 @@
 # Environment Setup (Current)
 
-Этот файл отражает текущее состояние проекта и дополняет `CONFIG.md`.
+This document reflects the current state of the project setup and complements `CONFIG.md`.
 
-## Быстрый запуск
+## Quick Start
 
 ```bash
 cp .env.example .env
 python -m src.api.main
 ```
 
-## Критичные переменные
+## Critical Variables
 
-- `DATABASE_URL` — обязателен, без него backend не стартует.
-- `MODEL_PATH` — должен указывать на существующий `.pt` файл, иначе startup завершится ошибкой.
-- `JWT_SECRET_KEY` — замените дефолт перед любым публичным запуском.
+- `DB_DRIVER`, `DB_USER`, `DB_PASS`, `DB_HOST`, `DB_PORT`, `DB_NAME` — required for database connection; the backend will fail to start without them.
+- `MODEL_PATH` — must point to an existing `.pt` file, otherwise startup will crash with an error.
+- `JWT_SECRET_KEY` — replace the default value before any public deployment.
 
-## Что уже поддерживается через env
+## Configurable via `.env`
 
-- Сервер/окружение: `HOST`, `PORT`, `DEBUG`, `ENVIRONMENT`
-- БД: `DATABASE_URL`, `DB_POOL_SIZE`, `DB_MAX_OVERFLOW`
-- Детекция: `MODEL_PATH`, `IMAGE_SIZE`, `IOU_THRESHOLD`, `AUGMENT`
-- Загрузка файлов: `MAX_UPLOAD_SIZE_MB`, `ALLOWED_IMAGE_TYPES`
+- Server / Environment: `HOST`, `PORT`, `DEBUG`, `ENVIRONMENT`
+- Database: `DATABASE_URL`, `DB_POOL_SIZE`, `DB_MAX_OVERFLOW`
+- Detection: `MODEL_PATH`, `IMAGE_SIZE`, `IOU_THRESHOLD`, `AUGMENT`
+- File Uploads: `MAX_UPLOAD_SIZE_MB`, `ALLOWED_IMAGE_TYPES`
 - CORS: `ALLOWED_ORIGINS`
-- Rate limiting: `RATE_LIMIT_PER_MINUTE`
-- Celery/Redis: `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`, `CELERY_TIMEZONE`
-- Пакетная обработка: `MAX_BATCH_SIZE`, `TASK_TIME_LIMIT`
-- Логи: `LOG_LEVEL`, `LOG_FORMAT`, `LOG_DIR`, `LOG_FILE`, `LOG_MAX_BYTES`, `LOG_BACKUP_COUNT`
-- Очистка временных файлов: `CLEANUP_MAX_AGE_HOURS`, `CLEANUP_SCHEDULE_HOUR`, `CLEANUP_SCHEDULE_MINUTE`
+- Rate Limiting: `RATE_LIMIT_PER_MINUTE`
+- Celery / Redis: `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`, `CELERY_TIMEZONE`
+- Batch Processing: `MAX_BATCH_SIZE`, `TASK_TIME_LIMIT`
+- Logging: `LOG_LEVEL`, `LOG_FORMAT`, `LOG_DIR`, `LOG_FILE`, `LOG_MAX_BYTES`, `LOG_BACKUP_COUNT`
+- Temporary File Cleanup: `CLEANUP_MAX_AGE_HOURS`, `CLEANUP_SCHEDULE_HOUR`, `CLEANUP_SCHEDULE_MINUTE`
 
-## Важные ограничения
+## Important Restrictions
 
-- При `ENVIRONMENT=production` нельзя использовать `ALLOWED_ORIGINS=*`.
-- Frontend отдается backend-ом (`/` и `/dashboard`), отдельный `frontend/env-config.js` сейчас не подключен рантаймом.
+- In `ENVIRONMENT=production` mode, `ALLOWED_ORIGINS=*` is strictly disallowed.
+- The frontend is served directly by the backend (`/` and `/dashboard`); a standalone `frontend/env-config.js` is currently not evaluated at runtime.

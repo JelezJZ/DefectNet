@@ -1,51 +1,51 @@
-# DefectNet — Обнаружение дефектов PCB
+# DefectNet — PCB Defect Detection
 
-Система автоматического обнаружения дефектов печатных плат на основе YOLO11.
+An automated Printed Circuit Board (PCB) defect detection system based on YOLO11.
 
-## Возможности
+## Features
 
-- 🎯 Детекция 6 типов дефектов: missing_hole, short, open_circuit, mouse_bite, spur, spurious_copper
-- 🚀 FastAPI backend с REST API
-- 🖥️ Веб-интерфейс для загрузки изображений
-- 📊 Статистика и история проверок
-- 💾 SQLite для хранения результатов
+- 🎯 Detection of 5 defect types: short, open_circuit, mouse_bite, spur, spurious_copper
+- 🚀 FastAPI backend with REST API
+- 🖥️ Web interface for image uploads
+- 📊 Statistics and inspection history
+- 💾 PostgreSQL for storing inspection results
 
-## Установка
+## Installation
 
 ```bash
-# Клонировать репозиторий
+# Clone the repository
 git clone <repository-url>
 cd DefectNet
 
-# Установить зависимости
+# Install dependencies
 pip install -r requirements.txt
 
-# Настроить переменные окружения
+# Set up environment variables
 cp .env.example .env
-# Отредактируйте .env под вашу среду (особенно JWT_SECRET_KEY!)
+# Edit .env for your environment (especially JWT_SECRET_KEY!)
 
-# Скачать модели
+# Download pretrained models
 python scripts/download_models.py
 
-# При необходимости: обучайте через Jupyter (notebooks/)
+# Optional: Train models via Jupyter (notebooks/)
 ```
 
-### Конфигурация
+### Configuration
 
-⚠️ **ВАЖНО**: Перед запуском настройте `.env` файл:
+⚠️ **IMPORTANT**: Configure your `.env` file before running the application:
 
 ```bash
-# Сгенерировать безопасный JWT ключ
+# Generate a secure JWT secret key
 openssl rand -hex 32
 
-# Скопировать результат в .env:
-# JWT_SECRET_KEY=ваш_ключ_из_32_символов
+# Copy the generated output into .env:
+# JWT_SECRET_KEY=your_32_character_key_here
 ```
 
-📖 Подробное руководство: [CONFIG.md](CONFIG.md)  
-🚀 Быстрый статус env-настроек: [ENV_SETUP.md](ENV_SETUP.md)
+📖 Detailed guide: [CONFIG.md](CONFIG.md)  
+🚀 Quick env setup status: [ENV_SETUP.md](ENV_SETUP.md)
 
-## Запуск
+## Getting Started
 
 ### Backend (API)
 
@@ -53,68 +53,70 @@ openssl rand -hex 32
 python -m src.api.main
 ```
 
-API доступен по адресу: http://localhost:8000  
-Документация Swagger: http://localhost:8000/docs
+API available at: http://localhost:8000  
+Swagger UI documentation: http://localhost:8000/docs
 
 ### Frontend
 
-Frontend отдается самим FastAPI-приложением:
-- Главная: `http://localhost:8000/`
-- Дашборд: `http://localhost:8000/dashboard`
+The frontend is served directly by the FastAPI application:
+- Main page: `http://localhost:8000/`
+- Dashboard: `http://localhost:8000/dashboard`
 
 ## API Endpoints
 
-| Endpoint | Описание |
-|----------|----------|
-| `POST /auth/register` | Регистрация пользователя |
-| `POST /auth/login` | Вход и получение JWT |
-| `GET /auth/me` | Данные текущего пользователя |
-| `POST /detect` | Детекция дефектов на изображении |
-| `POST /batch-detect` | Синхронная пакетная детекция |
-| `POST /batch/upload` | Асинхронная пакетная обработка (Celery) |
-| `GET /batch/status/{batch_id}` | Статус Celery batch-задачи |
-| `GET /history/{inspection_id}` | Детали конкретной проверки |
-| `GET /health` | Проверка статуса API |
-| `GET /history` | История проверок |
-| `GET /analytics/dashboard` | Дашборд статистики |
-| `GET /defect-info` | Информация о типах дефектов |
-| `GET /models/available` | Модели для `detect` |
-| `GET /models/list` | Подробная информация по моделям |
-| `POST /models/compare` | Сравнение моделей на одном изображении |
-| `GET /export/pdf/{inspection_id}` | Экспорт отчета PDF |
-| `GET /export/json/{inspection_id}` | Экспорт одной проверки в JSON-файл |
-| `GET /export/image/{inspection_id}?format=png|jpeg` | Экспорт изображения результата |
-| `GET /export/csv` | Экспорт истории в CSV |
-| `GET /results/{file_path:path}` | Доступ к изображениям результата |
-| `GET /uploads/{file_path:path}` | Доступ к исходным изображениям |
-| `GET /dashboard` | HTML-дашборд аналитики |
-| `GET /` | HTML-интерфейс детекции |
+| Endpoint | Description |
+|----------|-------------|
+| `POST /auth/register` | User registration |
+| `POST /auth/login` | User login and JWT retrieval |
+| `GET /auth/me` | Current user profile |
+| `POST /detect` | Single image defect detection |
+| `POST /batch-detect` | Synchronous batch detection |
+| `POST /batch/upload` | Asynchronous batch processing (Celery) |
+| `GET /batch/status/{batch_id}` | Celery batch task status |
+| `GET /history/{inspection_id}` | Specific inspection details |
+| `GET /health` | API health check |
+| `GET /history` | Inspection history list |
+| `GET /analytics/dashboard` | Analytics dashboard data |
+| `GET /defect-info` | Defect type information |
+| `GET /models/available` | Models available for `detect` |
+| `GET /models/list` | Detailed model metadata |
+| `POST /models/compare` | Compare multiple models on a single image |
+| `GET /export/pdf/{inspection_id}` | Export PDF report |
+| `GET /export/json/{inspection_id}` | Export single inspection to JSON file |
+| `GET /export/image/{inspection_id}?format=png|jpeg` | Export processed output image |
+| `GET /export/csv` | Export inspection history to CSV |
+| `GET /results/{file_path:path}` | Access output result images |
+| `GET /uploads/{file_path:path}` | Access original uploaded images |
+| `GET /dashboard` | HTML analytics dashboard |
+| `GET /` | HTML detection user interface |
 
-## Структура проекта
+## Project Structure
 
 ```
 DefectNet/
-├── src/              # Исходный код (API, модели, БД)
-├── frontend/         # Веб-интерфейс
-├── models/           # Претренированные модели
-├── datasets/         # Датасеты (не в git)
-├── storage/          # Загруженные файлы и результаты
-├── runs/             # Результаты тренировок YOLO
-├── notebooks/        # Jupyter ноутбуки для обучения
-└── scripts/          # Скрипты (download_models.py)
+├── alembic/          # Database migrations
+├── src/              # Source code (API, models, DB)
+├── frontend/         # Web UI assets
+├── models/           # Pretrained model weights
+├── datasets/         # Datasets (gitignored)
+├── storage/          # Uploaded files and output results
+├── runs/             # YOLO training logs and runs
+├── notebooks/        # Jupyter notebooks for training
+├── scripts/          # Utility scripts (download_models.py)
+└── tests/            # Pytest tests
 ```
 
-## Требования
+## System Requirements
 
 - Python 3.10+
-- CUDA (опционально, для GPU)
+- CUDA (optional, recommended for GPU acceleration)
 - 4GB+ RAM
 
-## Важно
+## Important Notes
 
-- В продакшене `ALLOWED_ORIGINS=*` запрещен (приложение завершится при `ENVIRONMENT=production`).
-- Для запуска нужны рабочие `DATABASE_URL` и `MODEL_PATH` в `.env`.
+- In production mode, `ALLOWED_ORIGINS=*` is strictly disallowed (the application will fail to start if `ENVIRONMENT=production`).
+- Valid `DATABASE_URL` and `MODEL_PATH` variables in `.env` are required for startup.
 
-## Лицензия
+## License
 
 MIT

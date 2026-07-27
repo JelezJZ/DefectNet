@@ -34,6 +34,12 @@ This guide explains all available environment variables for DefectNet.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DATABASE_URL` | `sqlite:///pcb_defects.db` | Database connection string |
+| `DB_DRIVER` | `postgresql+psycopg2` | Database driver |
+| `DB_USER` | `postgres` | Database username |
+| `DB_PASS` | `postgres` | Database user password |
+| `DB_HOST` | `localhost` | Database host |
+| `DB_PORT` | `5432` | Database port |
+| `DB_NAME` | `defectnet` | Database name |
 | `DB_POOL_SIZE` | `5` | Database connection pool size |
 | `DB_MAX_OVERFLOW` | `10` | Max overflow connections |
 
