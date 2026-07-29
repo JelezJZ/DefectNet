@@ -614,6 +614,8 @@ function handleBatchFileSelect(e) {
     });
 
     displayBatchFiles();
+
+    e.target.value = '';
 }
 
 function displayBatchFiles() {
@@ -657,67 +659,136 @@ async function processBatch() {
 
     document.getElementById('batchProgress').style.display = 'block';
     document.getElementById('batchResults').style.display = 'none';
+    document.getElementById('batchProgressBar').style.width = '10%';
+    document.getElementById('batchProgressText').textContent = 'Uploading images...';
 
     const formData = new FormData();
     batchFiles.forEach(file => {
         formData.append('files', file);
     });
+
     const confidence = document.getElementById('batchConfidenceSlider')?.value || '0.25';
     const iou = document.getElementById('batchIouSlider')?.value || '0.45';
     const imgsz = document.getElementById('batchImgszInput')?.value || '1024';
     const modelName = document.getElementById('batchModelSelect')?.value || 'default';
 
     try {
-        const response = await fetch(`${API_URL}/detect/batch-detect?confidence=${confidence}&iou=${iou}&imgsz=${imgsz}&model_name=${encodeURIComponent(modelName)}`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${authToken}`
-            },
-            body: formData
-        });
+        const response = await fetch(
+            `${API_URL}/batch/upload?confidence=${confidence}&iou=${iou}&imgsz=${imgsz}&model_name=${encodeURIComponent(modelName)}`, 
+            {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: formData
+            }
+        );
 
         if (!response.ok) {
-            throw new Error('Batch processing failed');
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.detail || 'Batch upload failed');
         }
 
         const data = await response.json();
-        displayBatchResults(data);
         
+        clearBatchFiles();
+
+        pollBatchStatus(data.batch_id);
+
     } catch (error) {
+        document.getElementById('batchProgress').style.display = 'none';
         alert('Error: ' + error.message);
     }
 }
 
-function displayBatchResults(data) {
-    document.getElementById('batchProgressBar').style.width = '100%';
-    document.getElementById('batchProgressText').textContent = '100%';
+function pollBatchStatus(batchId) {
+    const progressBar = document.getElementById('batchProgressBar');
+    const progressText = document.getElementById('batchProgressText');
 
+    const intervalId = setInterval(async () => {
+        try {
+            const response = await fetch(`${API_URL}/batch/status/${batchId}`, {
+                headers: {
+                    'Authorization': `Bearer ${authToken}`
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch task status');
+            }
+
+            const statusData = await response.json();
+
+            if (statusData.state === 'PENDING') {
+                if (progressBar) progressBar.style.width = '30%';
+                if (progressText) progressText.textContent = 'Queued in Celery...';
+            } 
+            else if (statusData.state === 'PROCESSING') {
+                const progress = statusData.progress || 50;
+                if (progressBar) progressBar.style.width = `${progress}%`;
+                if (progressText) progressText.textContent = `Detecting defects (${progress}%)...`;
+            } 
+            else if (statusData.state === 'SUCCESS') {
+                clearInterval(intervalId);
+
+                if (progressBar) progressBar.style.width = '100%';
+                if (progressText) progressText.textContent = '100%';
+
+                displayBatchResults(statusData.result);
+            } 
+            else if (statusData.state === 'FAILURE') {
+                clearInterval(intervalId);
+                document.getElementById('batchProgress').style.display = 'none';
+                alert('Processing error: ' + (statusData.error || 'Task failed'));
+            }
+
+        } catch (error) {
+            clearInterval(intervalId);
+            document.getElementById('batchProgress').style.display = 'none';
+            alert('Status polling error: ' + error.message);
+        }
+    }, 1500);
+}
+
+function displayBatchResults(aggregatedData) {
     setTimeout(() => {
         document.getElementById('batchProgress').style.display = 'none';
         document.getElementById('batchResults').style.display = 'block';
 
-        const resultsHTML = data.results.map((result, index) => {
-            if (result.status === 'error') {
+        let resultsHTML = '';
+
+        if (aggregatedData.results && aggregatedData.results.length > 0) {
+            resultsHTML += aggregatedData.results.map((item, index) => {
+                const filename = item.image_path.split('/').pop();
+                const detectionsCount = item.count || 0;
+
                 return `
-                    <div class="defect-card" style="border-left-color: #dc3545;">
-                        <h4>${index + 1}. ${result.filename}</h4>
-                        <p style="color: #dc3545;">Error: ${result.error}</p>
+                    <div class="defect-card" style="border-left-color: #28a745;">
+                        <h4>${index + 1}. ${filename}</h4>
+                        <p><strong>Status:</strong> SUCCESS</p>
+                        <p><strong>Defects Found:</strong> ${detectionsCount}</p>
+                        <details>
+                            <summary style="cursor: pointer; color: #007bff;">View Bounding Boxes</summary>
+                            <pre style="font-size: 12px; background: #f8f9fa; padding: 8px; border-radius: 4px; margin-top: 5px;">
+${JSON.stringify(item.detections, null, 2)}
+                            </pre>
+                        </details>
                     </div>
                 `;
-            }
+            }).join('');
+        }
 
-            const inspectionData = result.data;
-            return `
-                <div class="defect-card" style="border-left-color: #28a745;">
-                    <h4>${index + 1}. ${result.filename}</h4>
-                    <p><strong>Status:</strong> ${inspectionData.results.status.toUpperCase()}</p>
-                    <p><strong>Defects Found:</strong> ${inspectionData.results.total_defects}</p>
-                    <p><strong>Critical:</strong> ${inspectionData.results.severity_breakdown.critical || 0}, 
-                        <strong>Medium:</strong> ${inspectionData.results.severity_breakdown.medium || 0}, 
-                        <strong>Low:</strong> ${inspectionData.results.severity_breakdown.low || 0}</p>
-                </div>
-            `;
-        }).join('');
+        if (aggregatedData.failures && aggregatedData.failures.length > 0) {
+            resultsHTML += aggregatedData.failures.map((item, index) => {
+                const filename = item.image_path.split('/').pop();
+                return `
+                    <div class="defect-card" style="border-left-color: #dc3545;">
+                        <h4>${filename}</h4>
+                        <p style="color: #dc3545;"><strong>Error:</strong> ${item.error}</p>
+                    </div>
+                `;
+            }).join('');
+        }
 
         document.getElementById('batchResultsContent').innerHTML = resultsHTML;
     }, 500);
