@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from pathlib import Path
@@ -10,18 +11,45 @@ from src.tasks.celery_config import celery_app
 
 logger = logging.getLogger(__name__)
 
-_model = None
+_worker_model_cache = {}
 
 
-def _load_model():
-    """Lazy loading of the model"""
-    global _model
-    if _model is None:
-        model_path = os.getenv(
-            "MODEL_PATH", "models/trained/pcb_defect_detector_v13_best.pt"
-        )
-        _model = YOLO(model_path)
-    return _model
+def _get_worker_model(model_name: str = "default") -> YOLO:
+    """
+    A standalone caching model loader inside the Celery process.
+    """
+    global _worker_model_cache
+
+    selected_name = model_name or "default"
+
+    if selected_name in _worker_model_cache:
+        return _worker_model_cache[selected_name]
+
+    default_model_path = os.getenv(
+        "MODEL_PATH", "models/trained/pcb_defect_detector_v13_best.pt"
+    )
+    target_path = default_model_path
+
+    config_path = Path("src/models/models_config.json")
+    if selected_name != "default" and config_path.exists():
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+                models_dict = config.get("models", {})
+                if selected_name in models_dict:
+                    target_path = models_dict[selected_name].get("path", target_path)
+        except Exception as e:
+            logger.warning("Failed to read models_config.json in Celery: %s", str(e))
+
+    model_file = Path(target_path)
+    if not model_file.exists():
+        raise FileNotFoundError(f"Model file not found at path: {target_path}")
+
+    logger.info("Loading YOLO model '%s' from %s...", selected_name, target_path)
+    loaded_model = YOLO(str(model_file))
+    
+    _worker_model_cache[selected_name] = loaded_model
+    return loaded_model
 
 
 @celery_app.task(
@@ -57,7 +85,7 @@ def process_single_image(
 
         self.update_state(state="PROCESSING", meta={"progress": 30})
 
-        model = _load_model()
+        model = _get_worker_model(model_name)
         
         results = model(img, conf=confidence, iou=iou, imgsz=imgsz)
         
