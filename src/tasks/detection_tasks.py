@@ -1,23 +1,65 @@
 import json
-import logging
 import os
+import time
+import uuid
 from pathlib import Path
+from typing import Any
 
 import cv2
+import numpy as np
 from celery.exceptions import SoftTimeLimitExceeded
+from celery.utils.log import get_task_logger
 from ultralytics import YOLO
 
+from src.database.database import SessionLocal
+from src.services.detection_pipeline import (
+    build_defect_stats,
+    build_detections,
+    get_inspection_status,
+)
+from src.services.inspection_persistence import save_inspection_and_stats
+from src.services.model_registry import discover_model_paths
 from src.tasks.celery_config import celery_app
 
-logger = logging.getLogger(__name__)
+logger = get_task_logger(__name__)
 
-_worker_model_cache = {}
+_worker_model_cache: dict[str, tuple[YOLO, dict[str, str]]] = {}
 
+DEFECT_INFO = {
+    "mouse_bite": {
+        "name_ru": "Мышиный укус",
+        "severity": "medium",
+        "description": "Неровные края на печатной плате",
+    },
+    "spur": {
+        "name_ru": "Выступ",
+        "severity": "low",
+        "description": "Выступ на проводнике",
+    },
+    "short": {
+        "name_ru": "Короткое замыкание",
+        "severity": "critical",
+        "description": "Нежелательное соединение проводников",
+    },
+    "open_circuit": {
+        "name_ru": "Разрыв цепи",
+        "severity": "critical",
+        "description": "Разрыв проводника",
+    },
+    "spurious_copper": {
+        "name_ru": "Лишняя медь",
+        "severity": "medium",
+        "description": "Остатки меди на плате",
+    },
+}
 
-def _get_worker_model(model_name: str = "default") -> YOLO:
+def _get_worker_model_and_version(model_name: str = "default") -> tuple[YOLO, dict[str, str]]:
     """
     A standalone caching model loader inside the Celery process.
     """
+
+    from src.api.main import BASE_DIR
+
     global _worker_model_cache
 
     selected_name = model_name or "default"
@@ -30,7 +72,15 @@ def _get_worker_model(model_name: str = "default") -> YOLO:
     )
     target_path = default_model_path
 
-    config_path = Path("src/models/models_config.json")
+    config_path = BASE_DIR / "src" / "models" / "models_config.json"
+
+    available_model_paths = discover_model_paths(
+        default_model_path=default_model_path,
+        models_config_path=config_path,
+    )
+
+    model_versions = {name: "unknown" for name in available_model_paths.keys()}
+    
     if selected_name != "default" and config_path.exists():
         try:
             with open(config_path, "r", encoding="utf-8") as f:
@@ -38,6 +88,9 @@ def _get_worker_model(model_name: str = "default") -> YOLO:
                 models_dict = config.get("models", {})
                 if selected_name in models_dict:
                     target_path = models_dict[selected_name].get("path", target_path)
+                for name, info in config.get("models", {}).items():
+                    if name in model_versions:
+                        model_versions[name] = str(info.get("version", "unknown"))
         except Exception as e:
             logger.warning("Failed to read models_config.json in Celery: %s", str(e))
 
@@ -48,12 +101,14 @@ def _get_worker_model(model_name: str = "default") -> YOLO:
     logger.info("Loading YOLO model '%s' from %s...", selected_name, target_path)
     loaded_model = YOLO(str(model_file))
     
-    _worker_model_cache[selected_name] = loaded_model
-    return loaded_model
+    _worker_model_cache[selected_name] = (loaded_model, model_versions)
+    return loaded_model, model_versions
 
 
 @celery_app.task(
-    bind=True, max_retries=2, time_limit=int(os.getenv("TASK_TIME_LIMIT", "300"))
+    bind=True, 
+    max_retries=2, 
+    time_limit=int(os.getenv("TASK_TIME_LIMIT", "300"))
 )
 def process_single_image(
     self, 
@@ -62,20 +117,23 @@ def process_single_image(
     iou: float = 0.45,
     imgsz: int = 1024,
     model_name: str = "default",
-):
+) -> dict:
     """Asynchronous processing of a single image"""
+
+    start_time = time.time()
 
     try:
         self.update_state(state="PROCESSING", meta={"progress": 10})
 
-        if not Path(image_path).exists():
-            return {
-                "image_path": image_path,
-                "status": "error",
-                "error": "File not found on disk",
-            }
+        path_obj = Path(image_path)
+        if not path_obj.exists() or path_obj.stat().st_size == 0:
+            return {"image_path": image_path, "status": "error", "error": "File missing or zero size"}
 
-        img = cv2.imread(image_path)
+        with open(image_path, "rb") as f:
+            file_bytes = np.frombuffer(f.read(), dtype=np.uint8)
+        
+        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        
         if img is None:
             return {
                 "image_path": image_path,
@@ -85,28 +143,41 @@ def process_single_image(
 
         self.update_state(state="PROCESSING", meta={"progress": 30})
 
-        model = _get_worker_model(model_name)
-        
+        height, width = img.shape[:2]
+
+        model, model_versions = _get_worker_model_and_version(model_name)
         results = model(img, conf=confidence, iou=iou, imgsz=imgsz)
         
         self.update_state(state="PROCESSING", meta={"progress": 80})
 
-        detections = []
-        for r in results:
-            for box in r.boxes:
-                detections.append(
-                    {
-                        "class": model.names[int(box.cls)],
-                        "confidence": float(box.conf),
-                        "bbox": box.xyxy[0].tolist(),
-                    }
-                )
+        model_version = model_versions.get(model_name, "unknown")
+
+        detections, severity_counts = build_detections(
+            results, model.names, DEFECT_INFO
+        )
+
+        inspection_status = get_inspection_status(severity_counts)
+
+        stats_map = build_defect_stats(detections)
+
+        processing_time = round(time.time() - start_time, 4)
 
         return {
+            "status": "success",
             "image_path": image_path,
+            "filename": path_obj.name,
+            "image_width": width,
+            "image_height": height,
+            "confidence": confidence,
+            "model_name": model_name,
+            "model_version": model_version,
             "detections": detections,
             "count": len(detections),
-            "status": "success",
+            "stats_map": stats_map,
+            "inspection_status": inspection_status,
+            "severity_counts": severity_counts,
+            "processing_time": processing_time,
+            "result_image_path": None,
         }
 
     except SoftTimeLimitExceeded:
@@ -130,7 +201,11 @@ def process_single_image(
 
 
 @celery_app.task(bind=True)
-def aggregate_batch_results(self, results: list):
+def aggregate_batch_results(
+    self, 
+    results: list, 
+    user_id: int = None
+) -> dict[str, Any]:
     """Aggregation of batch processing results"""
 
     try:
@@ -154,6 +229,35 @@ def aggregate_batch_results(self, results: list):
                     else "unknown"
                 )
                 failed.append({"image_path": image_path, "error": error_msg})
+
+        if successful:
+            with SessionLocal() as db:
+                try:
+                    for item in successful:
+                        inspection_id = str(uuid.uuid4())
+
+                        save_inspection_and_stats(
+                            db=db,
+                            inspection_id=inspection_id,
+                            filename=item["filename"],
+                            image_width=item["image_width"],
+                            image_height=item["image_height"],
+                            confidence_threshold=item["confidence"],
+                            model_name=item["model_name"],
+                            model_version=item["model_version"],
+                            total_defects=item["count"],
+                            inspection_status=item["inspection_status"],
+                            severity_counts=item["severity_counts"],
+                            detections=item["detections"],
+                            result_image_path=item.get("result_image_path"),
+                            upload_path=item["image_path"],
+                            processing_time=item["processing_time"],
+                            operator_id=str(user_id),
+                            stats_map=item["stats_map"],
+                        )
+                    logger.info("Successfully saved %d inspections to DB via save_inspection_and_stats", len(successful))
+                except Exception as e:
+                    logger.error("Failed batch DB save: %s", str(e))
 
         return {
             "status": "completed",
