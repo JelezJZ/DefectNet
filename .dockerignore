@@ -1,0 +1,34 @@
+.git
+.gitignore
+*.pyc
+__pycache__/
+.venv/
+venv/
+env/
+
+# Данные, модели и артефакты — монтируются томами, в образ не нужны
+models/
+storage/
+datasets/
+runs/
+*.pt
+*.pth
+*.onnx
+*.db
+*.sqlite
+
+# Окружение и секреты
+.env
+*.env
+
+# Прочее
+docker-compose*.yml
+.dockerignore
+Dockerfile
+notebooks/
+*.log
+logs/
+.vscode/
+.mypy_cache/
+.pytest_cache/
+tests/
