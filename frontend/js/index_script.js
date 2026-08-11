@@ -760,12 +760,15 @@ function displayBatchResults(aggregatedData) {
         if (aggregatedData.results && aggregatedData.results.length > 0) {
             resultsHTML += aggregatedData.results.map((item, index) => {
                 const filename = (item.filename || item.image_path || 'unknown.jpg').split('/').pop();
-                const detectionsCount = item.count || 0;
+                const status = item.inspection_status || 'passed';
+                const color = status === 'failed' ? '#dc3545'
+                            : status === 'warning' ? '#ffc107' : '#28a745';
+                const detectionsCount = item.total_defects || 0;
 
                 return `
-                    <div class="defect-card" style="border-left-color: #28a745;">
+                    <div class="defect-card" style="border-left-color: ${color}">
                         <h4>${index + 1}. ${filename}</h4>
-                        <p><strong>Status:</strong> SUCCESS</p>
+                        <p><strong>Status:</strong> ${status.toUpperCase()}</p>
                         <p><strong>Defects Found:</strong> ${detectionsCount}</p>
                         <details>
                             <summary style="cursor: pointer; color: #007bff;">View Bounding Boxes</summary>

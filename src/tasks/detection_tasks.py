@@ -14,6 +14,11 @@ from celery.utils.log import get_task_logger
 from ultralytics import YOLO
 
 from src.database.database import SessionLocal
+from src.services.detection_cache import (
+    build_cache_key,
+    get_cached_result,
+    set_cached_result,
+)
 from src.services.detection_pipeline import (
     build_defect_stats,
     build_detections,
@@ -148,6 +153,8 @@ def process_single_image(
 
         with open(image_path, "rb") as f:
             file_bytes = np.frombuffer(f.read(), dtype=np.uint8)
+
+        contents = file_bytes.tobytes()
         
         img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
         
@@ -163,6 +170,17 @@ def process_single_image(
         height, width = img.shape[:2]
 
         model, model_versions = _get_worker_model_and_version(model_name)
+        model_version = model_versions.get(model_name, "unknown")
+
+        cache_key = build_cache_key(
+            image_bytes=contents,
+            model_name=model_name,
+            confidence=confidence,
+            iou=iou,
+            imgsz=imgsz,
+        )
+
+        cached_result =  get_cached_result(cache_key)
 
         now = datetime.now()
         date_dir = now.strftime("%Y/%m/%d")
@@ -173,28 +191,58 @@ def process_single_image(
         result_session_dir.mkdir(parents=True, exist_ok=True)
 
         upload_image_path = save_uploaded_image(
-            file_bytes.tobytes(), filename, upload_session_dir, req_base_filename
+            contents, filename, upload_session_dir, req_base_filename
         )
 
         augment = os.getenv("AUGMENT", "True").lower() == "true"
 
-        results = model(img, conf=confidence, iou=iou, imgsz=imgsz, augment=augment)
-        
-        self.update_state(state="PROCESSING", meta={"progress": 80})
+        if cached_result:
+            detections = cached_result["detections"]
+            severity_counts = cached_result["severity_counts"]
+            total_defects = cached_result["total_defects"]
+            inspection_status = cached_result["inspection_status"]
 
-        model_version = model_versions.get(model_name, "unknown")
+            cached_result_image_path = cached_result.get("result_image_path")
+            result_image_path = None
+            result_image_url = None
 
-        detections, severity_counts = build_detections(
-            results, model.names, DEFECT_INFO
-        )
+            if (
+                save_image
+                and cached_result_image_path
+                and Path(cached_result_image_path).exists()
+            ):
+                result_image_path = Path(cached_result_image_path)
+                path_parts = result_image_path.relative_to(RESULTS_DIR).parts
+                result_image_url = "/results/" + "/".join(path_parts)
+        else:
+            results = model(img, conf=confidence, iou=iou, imgsz=imgsz, augment=augment)
 
-        result_image_path, result_image_url = save_result_visualization(
-            results, detections, save_image, result_session_dir, req_base_filename
-        )
-        if result_image_url:
-            result_image_url = f"/results/{date_dir}/{session_dir_name}/result_{req_base_filename}.jpg"
+            detections, severity_counts = build_detections(
+                results, model.names, DEFECT_INFO
+            )
 
-        inspection_status = get_inspection_status(severity_counts)
+            total_defects = len(detections)
+
+            result_image_path, result_image_url = save_result_visualization(
+                results, detections, save_image, result_session_dir, req_base_filename
+            )
+            if result_image_url:
+                result_image_url = f"/results/{date_dir}/{session_dir_name}/result_{req_base_filename}.jpg"
+
+            inspection_status = get_inspection_status(severity_counts)
+
+            set_cached_result(
+                cache_key,
+                {
+                    "detections": detections,
+                    "severity_counts": severity_counts,
+                    "total_defects": total_defects,
+                    "inspection_status": inspection_status,
+                    "result_image_path": str(result_image_path)
+                    if result_image_path
+                    else None,
+                },
+            )
 
         stats_map = build_defect_stats(detections)
 
@@ -202,6 +250,7 @@ def process_single_image(
 
         return {
             "status": "success",
+            "inspection_id": inspection_id,
             "image_path": image_path,
             "filename": filename or path_obj.name,
             "image_width": width,
@@ -210,11 +259,12 @@ def process_single_image(
             "model_name": model_name,
             "model_version": model_version,
             "detections": detections,
-            "count": len(detections),
+            "total_defects": total_defects,
             "inspection_status": inspection_status,
             "severity_counts": severity_counts,
             "upload_image_path": str(upload_image_path) if upload_image_path else None,
             "result_image_path": str(result_image_path) if result_image_path else None,
+            "result_image_url": result_image_url,
             "processing_time": processing_time,
             "stats_map": stats_map,
         }
@@ -256,7 +306,7 @@ def aggregate_batch_results(
         for result in results:
             if isinstance(result, dict) and result.get("status") == "success":
                 successful.append(result)
-                total_detections += result.get("count", 0)
+                total_detections += result.get("total_defects", 0)
             else:
                 error_msg = (
                     result.get("error", "Unknown error")
@@ -274,18 +324,16 @@ def aggregate_batch_results(
             with SessionLocal() as db:
                 try:
                     for item in successful:
-                        inspection_id = str(uuid.uuid4())
-
                         save_inspection_and_stats(
                             db=db,
-                            inspection_id=inspection_id,
+                            inspection_id=item["inspection_id"],
                             filename=item["filename"],
                             image_width=item["image_width"],
                             image_height=item["image_height"],
                             confidence_threshold=item["confidence"],
                             model_name=item["model_name"],
                             model_version=item["model_version"],
-                            total_defects=item["count"],
+                            total_defects=item["total_defects"],
                             inspection_status=item["inspection_status"],
                             severity_counts=item["severity_counts"],
                             detections=item["detections"],
