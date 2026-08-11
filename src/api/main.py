@@ -12,6 +12,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
 from ultralytics import YOLO
 
 from src.api.analytics_routes import router as analytics_router
@@ -28,10 +29,32 @@ from src.core.logging_config import setup_logging
 from src.database.models import User
 from src.services.model_registry import discover_model_paths
 
-# Load environment variables
 load_dotenv()
 setup_logging()
 logger = logging.getLogger(__name__)
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+FRONTEND_DIR = BASE_DIR / "frontend"
+STORAGE_DIR = BASE_DIR / os.getenv("STORAGE_DIR", "storage")
+UPLOAD_DIR = BASE_DIR / os.getenv("UPLOAD_DIR", "storage/uploads")
+RESULTS_DIR = BASE_DIR / os.getenv("RESULTS_DIR", "storage/results")
+
+UPLOAD_DIR.mkdir(exist_ok=True)
+RESULTS_DIR.mkdir(exist_ok=True)
+
+model = None
+model_cache = {}
+available_model_paths = {}
+model_versions = {}
+
+
+class NoCacheStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope) -> Response:
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
 
 
 @asynccontextmanager
@@ -77,6 +100,10 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+app.mount("/js", NoCacheStaticFiles(directory=str(FRONTEND_DIR / "js")), name="js")
+app.mount("/css", NoCacheStaticFiles(directory=str(FRONTEND_DIR / "css")), name="css")
+app.mount("/frontend", NoCacheStaticFiles(directory="frontend"), name="frontend")
 
 # CORS
 environment = os.getenv("ENVIRONMENT", "development").strip().lower()
@@ -141,12 +168,6 @@ async def ip_rate_limit_middleware(request: Request, call_next):
     return await call_next(request)
 
 
-# Статические файлы (frontend)
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-FRONTEND_DIR = BASE_DIR / "frontend"
-app.mount("/css", StaticFiles(directory=str(FRONTEND_DIR / "css")), name="css")
-app.mount("/js", StaticFiles(directory=str(FRONTEND_DIR / "js")), name="js")
-
 app.include_router(auth_router)
 app.include_router(websocket_router)
 app.include_router(batch_router)
@@ -156,21 +177,6 @@ app.include_router(history_router)
 app.include_router(detect_router)
 app.include_router(file_router)
 app.include_router(analytics_router)
-
-# Глобальная переменная для модели
-model = None
-model_cache = {}
-available_model_paths = {}
-model_versions = {}
-
-# Storage directories from env
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-STORAGE_DIR = BASE_DIR / os.getenv("STORAGE_DIR", "storage")
-UPLOAD_DIR = BASE_DIR / os.getenv("UPLOAD_DIR", "storage/uploads")
-RESULTS_DIR = BASE_DIR / os.getenv("RESULTS_DIR", "storage/results")
-
-UPLOAD_DIR.mkdir(exist_ok=True)
-RESULTS_DIR.mkdir(exist_ok=True)
 
 
 @app.get("/")
