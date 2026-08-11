@@ -103,7 +103,7 @@ async def upload_batch(
         for path in image_paths
     ]
 
-    job = chord(tasks)(aggregate_batch_results.s(user_id=current_user.id))
+    job = chord(tasks)(aggregate_batch_results.s(user_id=current_user.id, batch_dir=str(batch_dir)))
 
     return {
         "batch_id": job.id,

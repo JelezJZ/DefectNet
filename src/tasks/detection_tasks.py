@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import time
 import uuid
 from datetime import datetime
@@ -242,7 +243,8 @@ def process_single_image(
 def aggregate_batch_results(
     self, 
     results: list, 
-    user_id: int = None
+    user_id: int = None,
+    batch_dir: str = None,
 ) -> dict[str, Any]:
     """Aggregation of batch processing results"""
 
@@ -310,3 +312,6 @@ def aggregate_batch_results(
     except Exception as e:
         logger.error(f"Error aggregating results: {str(e)}")
         raise
+    finally:
+        if batch_dir and Path(batch_dir).exists():
+            shutil.rmtree(batch_dir, ignore_errors=True)
