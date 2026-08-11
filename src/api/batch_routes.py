@@ -31,6 +31,7 @@ async def upload_batch(
     iou: float = 0.45,
     imgsz: int = 1024,
     model_name: str = "default",
+    save_image: bool = True,
     current_user: User = Depends(get_current_user),
 ):
     """Loading a batch of images for processing"""
@@ -91,11 +92,13 @@ async def upload_batch(
 
     tasks = [
         process_single_image.s(
+            filename=file.filename,
             image_path=path,
             confidence=confidence,
             iou=iou,
             imgsz=imgsz,
             model_name=model_name,
+            save_image=save_image,
         )
         for path in image_paths
     ]

@@ -2,6 +2,7 @@ import json
 import os
 import time
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,8 @@ from src.services.detection_pipeline import (
     build_defect_stats,
     build_detections,
     get_inspection_status,
+    save_result_visualization,
+    save_uploaded_image,
 )
 from src.services.inspection_persistence import save_inspection_and_stats
 from src.services.model_registry import discover_model_paths
@@ -111,16 +114,29 @@ def _get_worker_model_and_version(model_name: str = "default") -> tuple[YOLO, di
     time_limit=int(os.getenv("TASK_TIME_LIMIT", "300"))
 )
 def process_single_image(
-    self, 
-    image_path: str, 
+    self,
+    filename: str = None,
+    image_path: str = None, 
     confidence: float = 0.25,
     iou: float = 0.45,
     imgsz: int = 1024,
     model_name: str = "default",
+    save_image: bool = True,
 ) -> dict:
     """Asynchronous processing of a single image"""
 
+    from src.api.main import (
+        RESULTS_DIR,
+        UPLOAD_DIR,
+    )
+
     start_time = time.time()
+
+    inspection_id = str(uuid.uuid4())
+
+    req_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    req_unique_id = uuid.uuid4().hex[:8]
+    req_base_filename = f"{req_timestamp}_{req_unique_id}"
 
     try:
         self.update_state(state="PROCESSING", meta={"progress": 10})
@@ -146,7 +162,22 @@ def process_single_image(
         height, width = img.shape[:2]
 
         model, model_versions = _get_worker_model_and_version(model_name)
-        results = model(img, conf=confidence, iou=iou, imgsz=imgsz)
+
+        now = datetime.now()
+        date_dir = now.strftime("%Y/%m/%d")
+        session_dir_name = inspection_id
+        upload_session_dir = UPLOAD_DIR / date_dir / session_dir_name
+        result_session_dir = RESULTS_DIR / date_dir / session_dir_name
+        upload_session_dir.mkdir(parents=True, exist_ok=True)
+        result_session_dir.mkdir(parents=True, exist_ok=True)
+
+        upload_image_path = save_uploaded_image(
+            file_bytes.tobytes(), filename, upload_session_dir, req_base_filename
+        )
+
+        augment = os.getenv("AUGMENT", "True").lower() == "true"
+
+        results = model(img, conf=confidence, iou=iou, imgsz=imgsz, augment=augment)
         
         self.update_state(state="PROCESSING", meta={"progress": 80})
 
@@ -155,6 +186,12 @@ def process_single_image(
         detections, severity_counts = build_detections(
             results, model.names, DEFECT_INFO
         )
+
+        result_image_path, result_image_url = save_result_visualization(
+            results, detections, save_image, result_session_dir, req_base_filename
+        )
+        if result_image_url:
+            result_image_url = f"/results/{date_dir}/{session_dir_name}/result_{req_base_filename}.jpg"
 
         inspection_status = get_inspection_status(severity_counts)
 
@@ -165,7 +202,7 @@ def process_single_image(
         return {
             "status": "success",
             "image_path": image_path,
-            "filename": path_obj.name,
+            "filename": filename or path_obj.name,
             "image_width": width,
             "image_height": height,
             "confidence": confidence,
@@ -173,11 +210,12 @@ def process_single_image(
             "model_version": model_version,
             "detections": detections,
             "count": len(detections),
-            "stats_map": stats_map,
             "inspection_status": inspection_status,
             "severity_counts": severity_counts,
+            "upload_image_path": str(upload_image_path) if upload_image_path else None,
+            "result_image_path": str(result_image_path) if result_image_path else None,
             "processing_time": processing_time,
-            "result_image_path": None,
+            "stats_map": stats_map,
         }
 
     except SoftTimeLimitExceeded:
@@ -249,8 +287,8 @@ def aggregate_batch_results(
                             inspection_status=item["inspection_status"],
                             severity_counts=item["severity_counts"],
                             detections=item["detections"],
+                            upload_path=item.get("upload_image_path"),
                             result_image_path=item.get("result_image_path"),
-                            upload_path=item["image_path"],
                             processing_time=item["processing_time"],
                             operator_id=str(user_id),
                             stats_map=item["stats_map"],

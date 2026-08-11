@@ -759,7 +759,7 @@ function displayBatchResults(aggregatedData) {
 
         if (aggregatedData.results && aggregatedData.results.length > 0) {
             resultsHTML += aggregatedData.results.map((item, index) => {
-                const filename = item.image_path.split('/').pop();
+                const filename = (item.filename || item.image_path || 'unknown.jpg').split('/').pop();
                 const detectionsCount = item.count || 0;
 
                 return `
