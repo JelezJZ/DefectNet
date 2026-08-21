@@ -17,7 +17,6 @@ from ultralytics import YOLO
 
 from src.api.analytics_routes import router as analytics_router
 from src.api.auth_routes import router as auth_router
-from src.api.batch_routes import router as batch_router
 from src.api.detect_routes import router as detect_router
 from src.api.export_routes import router as export_router
 from src.api.files_routes import router as file_router
@@ -170,7 +169,6 @@ async def ip_rate_limit_middleware(request: Request, call_next):
 
 app.include_router(auth_router)
 app.include_router(websocket_router)
-app.include_router(batch_router)
 app.include_router(model_router)
 app.include_router(export_router)
 app.include_router(history_router)

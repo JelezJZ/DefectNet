@@ -382,7 +382,7 @@ async function analyzeImage() {
     const modelName = document.getElementById('singleModelSelect')?.value || 'default';
     
     try {
-        const response = await fetch(`${API_URL}/detect?confidence=${confidence}&iou=${iou}&imgsz=${imgsz}&model_name=${encodeURIComponent(modelName)}&save_image=true`, {
+        const response = await fetch(`${API_URL}/detect/single-detect?confidence=${confidence}&iou=${iou}&imgsz=${imgsz}&model_name=${encodeURIComponent(modelName)}&save_image=true`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${authToken}`
@@ -395,103 +395,99 @@ async function analyzeImage() {
         }
 
         const data = await response.json();
-        currentInspectionId = data.inspection_id;
-        displayResults(data);
+        pollSingleStatus(data.detection_id);
         
     } catch (error) {
+        document.getElementById('loading').classList.remove('active');
         alert('Error: ' + error.message);
         console.error(error);
-    } finally {
-        document.getElementById('loading').classList.remove('active');
     }
 }
 
-async function displayResults(data) {
-    const results = data.results;
-    
-    // Показать изображение
-    if (data.result_image) {
+function pollSingleStatus(detectionId) {
+    const intervalId = setInterval(async () => {
         try {
-            const response = await fetch(API_URL + data.result_image, {
-                headers: {
-                    'Authorization': `Bearer ${authToken}`
-                }
+            const response = await fetch(`${API_URL}/detect/status/${detectionId}`, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
             });
-            
-            if (!response.ok) throw new Error('Не удалось загрузить изображение');
+            if (!response.ok) throw new Error('Failed to fetch task status');
 
-            // Превращаем ответ в Blob (бинарные данные)
+            const statusData = await response.json();
+
+            if (statusData.state === 'PENDING' || statusData.state === 'PROCESSING') {
+            } else if (statusData.state === 'SUCCESS') {
+                clearInterval(intervalId);
+                document.getElementById('loading').classList.remove('active');
+                const item = statusData.result?.results?.[0];
+                if (item) displaySingleResult(item);
+                else throw new Error('Empty detection result');
+            } else if (statusData.state === 'FAILURE') {
+                clearInterval(intervalId);
+                document.getElementById('loading').classList.remove('active');
+                alert('Processing error: ' + (statusData.error || 'Task failed'));
+            }
+        } catch (error) {
+            clearInterval(intervalId);
+            document.getElementById('loading').classList.remove('active');
+            alert('Status polling error: ' + error.message);
+        }
+    }, 1500);
+}
+
+async function displaySingleResult(item) {
+    currentInspectionId = item.inspection_id;
+    
+    if (item.result_image_url) {
+        try {
+             const response = await fetch(API_URL + item.result_image_url, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            });
+            if (!response.ok) throw new Error('Не удалось загрузить изображение');
             const blob = await response.blob();
-            // Создаем временную URL-ссылку на этот Blob в памяти браузера
             const objectUrl = URL.createObjectURL(blob);
-            
             const imgElement = document.getElementById('resultImage');
             imgElement.src = objectUrl;
-            
-            // Освобождаем память, когда картинка загрузится
             imgElement.onload = () => URL.revokeObjectURL(objectUrl);
-
             document.getElementById('previewSection').classList.add('active');
         } catch (err) {
             console.error("Ошибка загрузки картинки:", err);
         }
     }
 
-    // Статус
-    const statusBadge = document.getElementById('statusBadge');
-    const statusClass = `status-${results.status}`;
     const statusText = {
         'passed': '✅ Inspection Passed',
         'warning': '⚠️ Minor Defects Detected',
         'failed': '❌ Critical Defects Detected'
     };
-    
-    statusBadge.innerHTML = `<div class="status-badge ${statusClass}">${statusText[results.status]}</div>`;
+    document.getElementById('statusBadge').innerHTML =
+        `<div class="status-badge status-${item.inspection_status}">${statusText[item.inspection_status] || item.inspection_status}</div>`;
 
-    // Статистика
-    const statsGrid = document.getElementById('statsGrid');
-    statsGrid.innerHTML = `
-        <div class="stat-card">
-            <h2>${results.total_defects}</h2>
-            <p>Total Defects</p>
-        </div>
-        <div class="stat-card" style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);">
-            <h2>${results.severity_breakdown.critical || 0}</h2>
-            <p>Critical</p>
-        </div>
-        <div class="stat-card" style="background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%);">
-            <h2>${results.severity_breakdown.medium || 0}</h2>
-            <p>Medium</p>
-        </div>
-        <div class="stat-card" style="background: linear-gradient(135deg, #28a745 0%, #218838 100%);">
-            <h2>${results.severity_breakdown.low || 0}</h2>
-            <p>Low</p>
-        </div>
+    const sev = item.severity_counts || { critical: 0, medium: 0, low: 0 };
+    document.getElementById('statsGrid').innerHTML = `
+        <div class="stat-card"><h2>${item.total_defects ?? 0}</h2><p>Total Defects</p></div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);"><h2>${sev.critical || 0}</h2><p>Critical</p></div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%);"><h2>${sev.medium || 0}</h2><p>Medium</p></div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #28a745 0%, #218838 100%);"><h2>${sev.low || 0}</h2><p>Low</p></div>
     `;
 
-    // Дефекты
+    const detections = item.detections || [];
     const defectsList = document.getElementById('defectsList');
-    
-    if (results.detections.length === 0) {
+    if (detections.length === 0) {
         defectsList.innerHTML = '<p style="text-align: center; color: #28a745; font-size: 1.2em;">🎉 No defects detected!</p>';
     } else {
-        defectsList.innerHTML = results.detections.map((defect, index) => `
+        defectsList.innerHTML = detections.map((defect, index) => `
             <div class="defect-card ${defect.severity}">
-                <h4>
-                    #${index + 1}: ${defect.class_ru}
-                    <span class="severity-${defect.severity}" style="float: right;">
-                        ${defect.severity.toUpperCase()}
-                    </span>
+                <h4>#${index + 1}: ${defect.class_ru}
+                    <span class="severity-${defect.severity}" style="float: right;">${defect.severity.toUpperCase()}</span>
                 </h4>
                 <p><strong>Type:</strong> ${defect.class}</p>
                 <p><strong>Confidence:</strong> ${(defect.confidence * 100).toFixed(1)}%</p>
                 <p><strong>Description:</strong> ${defect.description}</p>
-                <p><strong>Coordinates:</strong> 
-                    [${defect.bbox.x1.toFixed(0)}, ${defect.bbox.y1.toFixed(0)}] - 
+                <p><strong>Coordinates:</strong>
+                    [${defect.bbox.x1.toFixed(0)}, ${defect.bbox.y1.toFixed(0)}] -
                     [${defect.bbox.x2.toFixed(0)}, ${defect.bbox.y2.toFixed(0)}]
                 </p>
-            </div>
-        `).join('');
+            </div>`).join('');
     }
 
     document.getElementById('resultsSection').classList.add('active');
@@ -674,7 +670,7 @@ async function processBatch() {
 
     try {
         const response = await fetch(
-            `${API_URL}/batch/upload?confidence=${confidence}&iou=${iou}&imgsz=${imgsz}&model_name=${encodeURIComponent(modelName)}`, 
+            `${API_URL}/detect/batch-detect?confidence=${confidence}&iou=${iou}&imgsz=${imgsz}&model_name=${encodeURIComponent(modelName)}`, 
             {
                 method: 'POST',
                 headers: {
@@ -707,7 +703,7 @@ function pollBatchStatus(batchId) {
 
     const intervalId = setInterval(async () => {
         try {
-            const response = await fetch(`${API_URL}/batch/status/${batchId}`, {
+            const response = await fetch(`${API_URL}/detect/status/${batchId}`, {
                 headers: {
                     'Authorization': `Bearer ${authToken}`
                 }
