@@ -22,11 +22,7 @@ def _delete_path(path: Path) -> None:
     if path.is_dir():
         shutil.rmtree(path, ignore_errors=True)
     elif path.is_file():
-        try:
-            path.unlink(missing_ok=True)
-        except TypeError:
-            if path.exists():
-                path.unlink()
+        path.unlink(missing_ok=True)
 
 
 @celery_app.task(name="src.tasks.cleanup_tasks.cleanup_old_temp_files")
@@ -39,15 +35,13 @@ def cleanup_old_temp_files() -> dict:
     base_dir = Path(__file__).resolve().parents[2]
     storage_dir = base_dir / os.getenv("STORAGE_DIR", "storage")
 
-    targets = []
-
-    targets.extend(path for path in base_dir.glob("batch_*") if path.is_dir())
-
     temp_dirs = [
         storage_dir / "tmp",
         storage_dir / "temp",
         storage_dir / "batch_tmp",
     ]
+
+    targets = []
 
     for temp_dir in temp_dirs:
         if temp_dir.exists() and temp_dir.is_dir():

@@ -382,7 +382,7 @@ async function analyzeImage() {
     const modelName = document.getElementById('singleModelSelect')?.value || 'default';
     
     try {
-        const response = await fetch(`${API_URL}/detect?confidence=${confidence}&iou=${iou}&imgsz=${imgsz}&model_name=${encodeURIComponent(modelName)}&save_image=true`, {
+        const response = await fetch(`${API_URL}/detect/single-detect?confidence=${confidence}&iou=${iou}&imgsz=${imgsz}&model_name=${encodeURIComponent(modelName)}&save_image=true`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${authToken}`
@@ -395,103 +395,99 @@ async function analyzeImage() {
         }
 
         const data = await response.json();
-        currentInspectionId = data.inspection_id;
-        displayResults(data);
+        pollSingleStatus(data.detection_id);
         
     } catch (error) {
+        document.getElementById('loading').classList.remove('active');
         alert('Error: ' + error.message);
         console.error(error);
-    } finally {
-        document.getElementById('loading').classList.remove('active');
     }
 }
 
-async function displayResults(data) {
-    const results = data.results;
-    
-    // Показать изображение
-    if (data.result_image) {
+function pollSingleStatus(detectionId) {
+    const intervalId = setInterval(async () => {
         try {
-            const response = await fetch(API_URL + data.result_image, {
-                headers: {
-                    'Authorization': `Bearer ${authToken}`
-                }
+            const response = await fetch(`${API_URL}/detect/status/${detectionId}`, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
             });
-            
-            if (!response.ok) throw new Error('Не удалось загрузить изображение');
+            if (!response.ok) throw new Error('Failed to fetch task status');
 
-            // Превращаем ответ в Blob (бинарные данные)
+            const statusData = await response.json();
+
+            if (statusData.state === 'PENDING' || statusData.state === 'PROCESSING') {
+            } else if (statusData.state === 'SUCCESS') {
+                clearInterval(intervalId);
+                document.getElementById('loading').classList.remove('active');
+                const item = statusData.result?.results?.[0];
+                if (item) displaySingleResult(item);
+                else throw new Error('Empty detection result');
+            } else if (statusData.state === 'FAILURE') {
+                clearInterval(intervalId);
+                document.getElementById('loading').classList.remove('active');
+                alert('Processing error: ' + (statusData.error || 'Task failed'));
+            }
+        } catch (error) {
+            clearInterval(intervalId);
+            document.getElementById('loading').classList.remove('active');
+            alert('Status polling error: ' + error.message);
+        }
+    }, 1500);
+}
+
+async function displaySingleResult(item) {
+    currentInspectionId = item.inspection_id;
+    
+    if (item.result_image_url) {
+        try {
+             const response = await fetch(API_URL + item.result_image_url, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            });
+            if (!response.ok) throw new Error('Не удалось загрузить изображение');
             const blob = await response.blob();
-            // Создаем временную URL-ссылку на этот Blob в памяти браузера
             const objectUrl = URL.createObjectURL(blob);
-            
             const imgElement = document.getElementById('resultImage');
             imgElement.src = objectUrl;
-            
-            // Освобождаем память, когда картинка загрузится
             imgElement.onload = () => URL.revokeObjectURL(objectUrl);
-
             document.getElementById('previewSection').classList.add('active');
         } catch (err) {
             console.error("Ошибка загрузки картинки:", err);
         }
     }
 
-    // Статус
-    const statusBadge = document.getElementById('statusBadge');
-    const statusClass = `status-${results.status}`;
     const statusText = {
         'passed': '✅ Inspection Passed',
         'warning': '⚠️ Minor Defects Detected',
         'failed': '❌ Critical Defects Detected'
     };
-    
-    statusBadge.innerHTML = `<div class="status-badge ${statusClass}">${statusText[results.status]}</div>`;
+    document.getElementById('statusBadge').innerHTML =
+        `<div class="status-badge status-${item.inspection_status}">${statusText[item.inspection_status] || item.inspection_status}</div>`;
 
-    // Статистика
-    const statsGrid = document.getElementById('statsGrid');
-    statsGrid.innerHTML = `
-        <div class="stat-card">
-            <h2>${results.total_defects}</h2>
-            <p>Total Defects</p>
-        </div>
-        <div class="stat-card" style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);">
-            <h2>${results.severity_breakdown.critical || 0}</h2>
-            <p>Critical</p>
-        </div>
-        <div class="stat-card" style="background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%);">
-            <h2>${results.severity_breakdown.medium || 0}</h2>
-            <p>Medium</p>
-        </div>
-        <div class="stat-card" style="background: linear-gradient(135deg, #28a745 0%, #218838 100%);">
-            <h2>${results.severity_breakdown.low || 0}</h2>
-            <p>Low</p>
-        </div>
+    const sev = item.severity_counts || { critical: 0, medium: 0, low: 0 };
+    document.getElementById('statsGrid').innerHTML = `
+        <div class="stat-card"><h2>${item.total_defects ?? 0}</h2><p>Total Defects</p></div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);"><h2>${sev.critical || 0}</h2><p>Critical</p></div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%);"><h2>${sev.medium || 0}</h2><p>Medium</p></div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #28a745 0%, #218838 100%);"><h2>${sev.low || 0}</h2><p>Low</p></div>
     `;
 
-    // Дефекты
+    const detections = item.detections || [];
     const defectsList = document.getElementById('defectsList');
-    
-    if (results.detections.length === 0) {
+    if (detections.length === 0) {
         defectsList.innerHTML = '<p style="text-align: center; color: #28a745; font-size: 1.2em;">🎉 No defects detected!</p>';
     } else {
-        defectsList.innerHTML = results.detections.map((defect, index) => `
+        defectsList.innerHTML = detections.map((defect, index) => `
             <div class="defect-card ${defect.severity}">
-                <h4>
-                    #${index + 1}: ${defect.class_ru}
-                    <span class="severity-${defect.severity}" style="float: right;">
-                        ${defect.severity.toUpperCase()}
-                    </span>
+                <h4>#${index + 1}: ${defect.class_ru}
+                    <span class="severity-${defect.severity}" style="float: right;">${defect.severity.toUpperCase()}</span>
                 </h4>
                 <p><strong>Type:</strong> ${defect.class}</p>
                 <p><strong>Confidence:</strong> ${(defect.confidence * 100).toFixed(1)}%</p>
                 <p><strong>Description:</strong> ${defect.description}</p>
-                <p><strong>Coordinates:</strong> 
-                    [${defect.bbox.x1.toFixed(0)}, ${defect.bbox.y1.toFixed(0)}] - 
+                <p><strong>Coordinates:</strong>
+                    [${defect.bbox.x1.toFixed(0)}, ${defect.bbox.y1.toFixed(0)}] -
                     [${defect.bbox.x2.toFixed(0)}, ${defect.bbox.y2.toFixed(0)}]
                 </p>
-            </div>
-        `).join('');
+            </div>`).join('');
     }
 
     document.getElementById('resultsSection').classList.add('active');
@@ -614,6 +610,8 @@ function handleBatchFileSelect(e) {
     });
 
     displayBatchFiles();
+
+    e.target.value = '';
 }
 
 function displayBatchFiles() {
@@ -657,67 +655,139 @@ async function processBatch() {
 
     document.getElementById('batchProgress').style.display = 'block';
     document.getElementById('batchResults').style.display = 'none';
+    document.getElementById('batchProgressBar').style.width = '10%';
+    document.getElementById('batchProgressText').textContent = 'Uploading images...';
 
     const formData = new FormData();
     batchFiles.forEach(file => {
         formData.append('files', file);
     });
+
     const confidence = document.getElementById('batchConfidenceSlider')?.value || '0.25';
     const iou = document.getElementById('batchIouSlider')?.value || '0.45';
     const imgsz = document.getElementById('batchImgszInput')?.value || '1024';
     const modelName = document.getElementById('batchModelSelect')?.value || 'default';
 
     try {
-        const response = await fetch(`${API_URL}/detect/batch-detect?confidence=${confidence}&iou=${iou}&imgsz=${imgsz}&model_name=${encodeURIComponent(modelName)}`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${authToken}`
-            },
-            body: formData
-        });
+        const response = await fetch(
+            `${API_URL}/detect/batch-detect?confidence=${confidence}&iou=${iou}&imgsz=${imgsz}&model_name=${encodeURIComponent(modelName)}`, 
+            {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: formData
+            }
+        );
 
         if (!response.ok) {
-            throw new Error('Batch processing failed');
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.detail || 'Batch upload failed');
         }
 
         const data = await response.json();
-        displayBatchResults(data);
         
+        clearBatchFiles();
+
+        pollBatchStatus(data.batch_id);
+
     } catch (error) {
+        document.getElementById('batchProgress').style.display = 'none';
         alert('Error: ' + error.message);
     }
 }
 
-function displayBatchResults(data) {
-    document.getElementById('batchProgressBar').style.width = '100%';
-    document.getElementById('batchProgressText').textContent = '100%';
+function pollBatchStatus(batchId) {
+    const progressBar = document.getElementById('batchProgressBar');
+    const progressText = document.getElementById('batchProgressText');
 
+    const intervalId = setInterval(async () => {
+        try {
+            const response = await fetch(`${API_URL}/detect/status/${batchId}`, {
+                headers: {
+                    'Authorization': `Bearer ${authToken}`
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch task status');
+            }
+
+            const statusData = await response.json();
+
+            if (statusData.state === 'PENDING') {
+                if (progressBar) progressBar.style.width = '30%';
+                if (progressText) progressText.textContent = 'Queued in Celery...';
+            } 
+            else if (statusData.state === 'PROCESSING') {
+                const progress = statusData.progress || 50;
+                if (progressBar) progressBar.style.width = `${progress}%`;
+                if (progressText) progressText.textContent = `Detecting defects (${progress}%)...`;
+            } 
+            else if (statusData.state === 'SUCCESS') {
+                clearInterval(intervalId);
+
+                if (progressBar) progressBar.style.width = '100%';
+                if (progressText) progressText.textContent = '100%';
+
+                displayBatchResults(statusData.result);
+            } 
+            else if (statusData.state === 'FAILURE') {
+                clearInterval(intervalId);
+                document.getElementById('batchProgress').style.display = 'none';
+                alert('Processing error: ' + (statusData.error || 'Task failed'));
+            }
+
+        } catch (error) {
+            clearInterval(intervalId);
+            document.getElementById('batchProgress').style.display = 'none';
+            alert('Status polling error: ' + error.message);
+        }
+    }, 1500);
+}
+
+function displayBatchResults(aggregatedData) {
     setTimeout(() => {
         document.getElementById('batchProgress').style.display = 'none';
         document.getElementById('batchResults').style.display = 'block';
 
-        const resultsHTML = data.results.map((result, index) => {
-            if (result.status === 'error') {
+        let resultsHTML = '';
+
+        if (aggregatedData.results && aggregatedData.results.length > 0) {
+            resultsHTML += aggregatedData.results.map((item, index) => {
+                const filename = (item.filename || item.image_path || 'unknown.jpg').split('/').pop();
+                const status = item.inspection_status || 'passed';
+                const color = status === 'failed' ? '#dc3545'
+                            : status === 'warning' ? '#ffc107' : '#28a745';
+                const detectionsCount = item.total_defects || 0;
+
                 return `
-                    <div class="defect-card" style="border-left-color: #dc3545;">
-                        <h4>${index + 1}. ${result.filename}</h4>
-                        <p style="color: #dc3545;">Error: ${result.error}</p>
+                    <div class="defect-card" style="border-left-color: ${color}">
+                        <h4>${index + 1}. ${filename}</h4>
+                        <p><strong>Status:</strong> ${status.toUpperCase()}</p>
+                        <p><strong>Defects Found:</strong> ${detectionsCount}</p>
+                        <details>
+                            <summary style="cursor: pointer; color: #007bff;">View Bounding Boxes</summary>
+                            <pre style="font-size: 12px; background: #f8f9fa; padding: 8px; border-radius: 4px; margin-top: 5px;">
+${JSON.stringify(item.detections, null, 2)}
+                            </pre>
+                        </details>
                     </div>
                 `;
-            }
+            }).join('');
+        }
 
-            const inspectionData = result.data;
-            return `
-                <div class="defect-card" style="border-left-color: #28a745;">
-                    <h4>${index + 1}. ${result.filename}</h4>
-                    <p><strong>Status:</strong> ${inspectionData.results.status.toUpperCase()}</p>
-                    <p><strong>Defects Found:</strong> ${inspectionData.results.total_defects}</p>
-                    <p><strong>Critical:</strong> ${inspectionData.results.severity_breakdown.critical || 0}, 
-                        <strong>Medium:</strong> ${inspectionData.results.severity_breakdown.medium || 0}, 
-                        <strong>Low:</strong> ${inspectionData.results.severity_breakdown.low || 0}</p>
-                </div>
-            `;
-        }).join('');
+        if (aggregatedData.failures && aggregatedData.failures.length > 0) {
+            resultsHTML += aggregatedData.failures.map((item, index) => {
+                const filename = item.image_path.split('/').pop();
+                return `
+                    <div class="defect-card" style="border-left-color: #dc3545;">
+                        <h4>${filename}</h4>
+                        <p style="color: #dc3545;"><strong>Error:</strong> ${item.error}</p>
+                    </div>
+                `;
+            }).join('');
+        }
 
         document.getElementById('batchResultsContent').innerHTML = resultsHTML;
     }, 500);
