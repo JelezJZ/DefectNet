@@ -39,19 +39,22 @@ def test_login_wrong_password(client, user_data):
 
 @pytest.mark.parametrize("endpoint, method", [
     ("/auth/me", "get"),
-    ("/batch/upload", "post"),
     ("/models/list", "get"),
     ("/models/compare", "post"),
-    ("/detect", "post"),
-    ("/detect/batch-detect", "post"),
     ("/models/available", "get"),
-    ("/history", "get"),
-    ("/history/123", "get"),
-    ("/analytics/dashboard", "get"),
     ("/export/pdf/123", "get"),
     ("/export/json/123", "get"),
     ("/export/image/123", "get"),
     ("/export/csv", "get"),
+    ("/history", "get"),
+    ("/history/123", "get"),
+    ("/detect/single-detect", "post"),
+    ("/detect/batch-detect", "post"),
+    ("/detect/status/123", "get"),
+    ("/results/123", "get"),
+    ("/uploads/123", "get"),
+    ("/analytics/dashboard", "get"),
+    ("/health", "get"),
 ])
 def test_unauthorized_access(client, endpoint, method):
     http_method = getattr(client, method)

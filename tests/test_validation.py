@@ -12,7 +12,7 @@ MINIMAL_PNG = (
 def test_detect_rejects_imgsz_not_multiple_of_32(client, auth_headers):
     files = {"file": ("x.png", io.BytesIO(MINIMAL_PNG), "image/png")}
     response = client.post(
-        "/detect?confidence=0.25&iou=0.45&imgsz=1000&model_name=default",
+        "/detect/single-detect?confidence=0.25&iou=0.45&imgsz=1000&model_name=default",
         files=files,
         headers=auth_headers,
     )
@@ -22,7 +22,7 @@ def test_detect_rejects_imgsz_not_multiple_of_32(client, auth_headers):
 def test_detect_rejects_iou_out_of_range(client, auth_headers):
     files = {"file": ("x.png", io.BytesIO(MINIMAL_PNG), "image/png")}
     response = client.post(
-        "/detect?confidence=0.25&iou=1.5&imgsz=1024&model_name=default",
+        "/detect/single-detect?confidence=0.25&iou=1.5&imgsz=1024&model_name=default",
         files=files,
         headers=auth_headers,
     )
@@ -32,7 +32,7 @@ def test_detect_rejects_iou_out_of_range(client, auth_headers):
 def test_detect_rejects_mime_mismatch(client, auth_headers):
     files = {"file": ("x.jpg", io.BytesIO(MINIMAL_PNG), "image/jpeg")}
     response = client.post(
-        "/detect?confidence=0.25&iou=0.45&imgsz=1024&model_name=default",
+        "/detect/single-detect?confidence=0.25&iou=0.45&imgsz=1024&model_name=default",
         files=files,
         headers=auth_headers,
     )

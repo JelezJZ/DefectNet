@@ -1,4 +1,5 @@
 import io
+import os
 from pathlib import Path
 import pytest
 
@@ -10,7 +11,7 @@ TEST_IMAGE_PATH_3 = BASE_DIR / "datasets" / "test_image_3.jpg"
 def test_detect_rejects_non_image(client, auth_headers):
     files = {"file": ("bad.txt", io.BytesIO(b"not image"), "text/plain")}
     response = client.post(
-        "/detect?model_name=default",
+        "/detect/single-detect?model_name=default",
         files=files,
         headers=auth_headers,
     )
@@ -20,7 +21,7 @@ def test_magic_bytes_mismatch(client, auth_headers):
     png = b"This is definitely not a PNG file"
     files = {"file": ("x.png", io.BytesIO(png), "image/png")}
     response = client.post(
-        "/detect",
+        "/detect/single-detect",
         files=files,
         headers=auth_headers,
     )
@@ -38,7 +39,7 @@ def test_detect_invalid_params(client, auth_headers, invalid_params):
     png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 128
     files = {"file": ("x.png", io.BytesIO(png), "image/png")}
     response = client.post(
-        "/detect",
+        "/detect/single-detect",
         params=invalid_params,
         files=files,
         headers=auth_headers,
@@ -50,68 +51,67 @@ def test_too_large_image(client, auth_headers):
     png = b"\x89PNG\r\n\x1a\n" + b"\x00" * size
     files = {"file": ("x.png", io.BytesIO(png), "image/png")}
     response = client.post(
-        "/detect",
+        "/detect/single-detect",
         files=files,
         headers=auth_headers,
     )
     assert response.status_code == 413
 
-def test_detect_valid_params(client, auth_headers):
-    with open(TEST_IMAGE_PATH, "rb") as f:
-        files = {"file": ("image.jpg", f, "image/jpeg")}
-        response = client.post(
-            "/detect?confidence=0.5&iou=0.5&imgsz=1024&model_name=default&save_image=true",
-            files=files,
-            headers=auth_headers,
-        )
-        assert response.status_code == 200
+def test_detect_valid_params(run_single_detect):
+    result = run_single_detect(
+        params={"confidence": 0.5, "iou": 0.5, "imgsz": 1024, "save_image": "true"}
+    )
 
-        data = response.json()
-        
-        assert "results" in data, f"Ключ 'results' отсутствует в ответе: {data}"
-        assert "inspection_id" in data
-        assert data.get("success") is True
+    assert result["status"] == "completed", result
+    assert result["total_images"] == 1, result
+    assert result["successful"] == 1, result
+    assert result["failed"] == 0, result
+
+    assert "results" in result, f"Ключ 'results' отсутствует в ответе: {result}"
+    detection = result["results"][0]
+
+    assert detection["status"] == "success", detection
+    assert detection["inspection_id"], detection
+    assert detection["result_image_url"].startswith("/results/"), detection
 
 def test_unknown_model_name(client, auth_headers):
     with open(TEST_IMAGE_PATH, "rb") as f:
         files = {"file": ("image.jpg", f, "image/jpeg")}
         response = client.post(
-            "/detect?model_name=unknown_model_name",
+            "/detect/single-detect?model_name=unknown_model_name",
             files=files,
             headers=auth_headers,
         )
         assert response.status_code == 400
+        assert "unknown_model_name" in response.json()["detail"]
 
-def test_batch_detect(client, auth_headers):
-    with open(TEST_IMAGE_PATH, "rb") as f1, \
-        open(TEST_IMAGE_PATH_2, "rb") as f2, \
-        open(TEST_IMAGE_PATH_3, "rb") as f3:
-        files = [
-            ("files", ("image_1.jpg", f1, "image/jpeg")),
-            ("files", ("image_2.jpg", f2, "image/jpeg")),
-            ("files", ("image_3.jpg", f3, "image/jpeg"))
+def test_batch_detect(run_batch_detect):
+    enqueued, result = run_batch_detect(
+        [
+            ("image_1.jpg", TEST_IMAGE_PATH),
+            ("image_2.jpg", TEST_IMAGE_PATH_2),
+            ("image_3.jpg", TEST_IMAGE_PATH_3),
         ]
-        response = client.post(
-            "/detect/batch-detect",
-            files=files,
-            headers=auth_headers,
-        )
-        assert response.status_code == 200
+    )
 
-        data = response.json()
+    assert enqueued["status"] == "queued", enqueued
+    assert enqueued["total_images"] == 3, enqueued
+    assert enqueued["batch_id"], enqueued
 
-        assert "results" in data, f"Ключ 'results' отсутствует в ответе: {data}"
-        
-        assert data["total_images"] == 3
-        assert data["processed"] == 3
+    assert "results" in result, f"Ключ 'results' отсутствует в ответе: {result}"
 
-        assert isinstance(data["results"], list)
-        assert len(data["results"]) == 3
+    assert result["total_images"] == 3, result
+    assert result["successful"] == 3, result
+    assert result["failed"] == 0, result
 
-        assert "batch_id" in data
-        assert len(data["batch_id"]) > 0
+    assert isinstance(result["results"], list)
+    assert len(result["results"]) == 3
 
-def test_one_bad_file_batch_detect(client, auth_headers):
+    for detection in result["results"]:
+        assert detection["status"] == "success", detection
+        assert detection["inspection_id"], detection
+
+def test_batch_detect_rejects_bad_file(client, auth_headers):
     with open(TEST_IMAGE_PATH, "rb") as f1, \
         open(TEST_IMAGE_PATH_2, "rb") as f2:
         files = [
@@ -124,24 +124,18 @@ def test_one_bad_file_batch_detect(client, auth_headers):
             files=files,
             headers=auth_headers,
         )
-        assert response.status_code == 200
 
-        data = response.json()
-
-        res_map = {r["filename"]: r for r in data["results"]}
-    
-        assert res_map["image_1.jpg"]["status"] == "success"
-        assert res_map["image_2.jpg"]["status"] == "success"
-        assert res_map["image_3.jpg"]["status"] == "error"
-        
-        assert "error" in res_map["image_3.jpg"]
+    assert response.status_code == 400
+    assert response.json()["detail"]
 
 def test_exceeded_max_batch_detect(client, auth_headers):
+    max_batch_size = int(os.getenv("MAX_BATCH_SIZE", "20"))
+
     with open(TEST_IMAGE_PATH, "rb") as f:
         image_content = f.read()
     
     files = []
-    for i in range(1, 22):
+    for i in range(1, max_batch_size + 2):
         files.append(
             ("files", (f"image_{i}.jpg", io.BytesIO(image_content), "image/jpeg"))
         )
@@ -151,4 +145,4 @@ def test_exceeded_max_batch_detect(client, auth_headers):
         headers=auth_headers,
     )
     assert response.status_code == 400
-    assert response.json()["detail"] == f"Maximum 20 images per batch"
+    assert response.json()["detail"] == f"Maximum {max_batch_size} images allowed per batch"
