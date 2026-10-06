@@ -8,21 +8,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libgl1 libglib2.0-0 gcc libpq-dev curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.12.21 /uv /uvx /bin/
 
 RUN uv python install 3.13 \
     && uv venv /opt/venv --python 3.13
 ENV PATH="/opt/venv/bin:${PATH}"
 
 WORKDIR /app
-COPY requirements.txt .
-RUN uv pip install --python /opt/venv/bin/python -r requirements.txt
-
-COPY . .
 
 RUN useradd --create-home appuser \
     && mkdir -p /app/storage \
-    && chown -R appuser:appuser /app
+    && chown appuser:appuser /app/storage
+
+COPY --chown=appuser:appuser requirements.txt .
+RUN uv pip install --python /opt/venv/bin/python -r requirements.txt
+
+COPY --chown=appuser:appuser . .
+
 USER appuser
 
 EXPOSE 8000
