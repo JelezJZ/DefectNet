@@ -2,6 +2,7 @@ import os
 import shutil
 import uuid
 from pathlib import Path
+from uuid import UUID
 
 from celery import chord
 from celery.canvas import Signature
@@ -17,11 +18,27 @@ from src.tasks.detection_tasks import aggregate_batch_results, process_single_im
 
 router = APIRouter(prefix="/detect", tags=["Detect"])
 
+def _storage_root() -> Path:
+    raw = os.getenv("STORAGE_DIR", "/app/storage")
+    p = Path(raw)
+    return p if p.is_absolute() else (Path.cwd() / p).resolve()
 
 def _save_bytes_sync(file_path: Path, contents: bytes) -> None:
     """Writing bytes to disk in a separate stream"""
     with open(file_path, "wb") as f:
         f.write(contents)
+
+def _validate_model_name(model_name: str) -> None:
+    """Reject unknown model names before the job is queued."""
+    from src.api.main import available_model_paths
+
+    if not available_model_paths or model_name in available_model_paths:
+        return
+
+    raise HTTPException(
+        status_code=400,
+        detail=f"Unknown model '{model_name}'. Available models: {sorted(available_model_paths)}",
+    )
 
 def _validate_detection_params(confidence: float, iou: float, imgsz: int) -> None:
     if not 0.0 <= confidence <= 1.0:
@@ -70,7 +87,7 @@ def _enqueue_chord(
     imgsz: int,
     model_name: str,
     save_image: bool,
-    user_id: int,
+    user_id: UUID | str,
     batch_dir: Path | str
 ) -> AsyncResult | Signature:
     """Queue a chord: per-image detection tasks + aggregation (writes to DB, cleans temp)."""
@@ -101,6 +118,7 @@ async def detect_single_image(
     """Main endpoint for defect detection"""
 
     _validate_detection_params(confidence, iou, imgsz)
+    _validate_model_name(model_name)
 
     max_upload_size_mb = int(os.getenv("MAX_UPLOAD_SIZE_MB", "50"))
     allowed_types = {
@@ -109,7 +127,7 @@ async def detect_single_image(
         if t.strip()
     }
 
-    batch_dir = Path(os.getenv("STORAGE_DIR", "storage")) / "temp" / f"single_{uuid.uuid4()}"
+    batch_dir = _storage_root() / "temp" / f"single_{uuid.uuid4()}"
     batch_dir.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -125,7 +143,7 @@ async def detect_single_image(
         staged,
         confidence=confidence, iou=iou, imgsz=imgsz,
         model_name=model_name, save_image=save_image,
-        user_id=int(current_user.id), batch_dir=str(batch_dir),
+        user_id=current_user.id, batch_dir=str(batch_dir),
     )
     
     return {
@@ -153,6 +171,7 @@ async def batch_detect(
         )
 
     _validate_detection_params(confidence, iou, imgsz)
+    _validate_model_name(model_name)
 
     max_upload_size_mb = int(os.getenv("MAX_UPLOAD_SIZE_MB", "50"))
     allowed_types = {
@@ -163,9 +182,7 @@ async def batch_detect(
         if t.strip()
     }
 
-    base_storage = Path(os.getenv("STORAGE_DIR", "storage"))
-    batch_id = str(uuid.uuid4())
-    batch_dir = base_storage / "temp" / f"batch_{batch_id}"
+    batch_dir = _storage_root() / "temp" / f"batch_{uuid.uuid4()}"
     batch_dir.mkdir(parents=True, exist_ok=True)
 
     staged = []
@@ -192,7 +209,7 @@ async def batch_detect(
         imgsz=imgsz,
         model_name=model_name,
         save_image=save_image,
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         batch_dir=str(batch_dir),
     )
 
