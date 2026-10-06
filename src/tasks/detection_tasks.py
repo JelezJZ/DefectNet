@@ -22,6 +22,7 @@ from src.services.detection_cache import (
 from src.services.detection_pipeline import (
     build_defect_stats,
     build_detections,
+    encode_visualization,
     get_inspection_status,
     save_result_visualization,
     save_uploaded_image,
@@ -201,19 +202,7 @@ def process_single_image(
             severity_counts = cached_result["severity_counts"]
             total_defects = cached_result["total_defects"]
             inspection_status = cached_result["inspection_status"]
-
-            cached_result_image_path = cached_result.get("result_image_path")
-            result_image_path = None
-            result_image_url = None
-
-            if (
-                save_image
-                and cached_result_image_path
-                and Path(cached_result_image_path).exists()
-            ):
-                result_image_path = Path(cached_result_image_path)
-                path_parts = result_image_path.relative_to(RESULTS_DIR).parts
-                result_image_url = "/results/" + "/".join(path_parts)
+            annotated_image = cached_result.get("annotated_image")
         else:
             results = model(img, conf=confidence, iou=iou, imgsz=imgsz, augment=augment)
 
@@ -223,13 +212,9 @@ def process_single_image(
 
             total_defects = len(detections)
 
-            result_image_path, result_image_url = save_result_visualization(
-                results, detections, save_image, result_session_dir, req_base_filename
-            )
-            if result_image_url:
-                result_image_url = f"/results/{date_dir}/{session_dir_name}/result_{req_base_filename}.jpg"
-
             inspection_status = get_inspection_status(severity_counts)
+
+            annotated_image = encode_visualization(results) if detections else None
 
             set_cached_result(
                 cache_key,
@@ -238,11 +223,19 @@ def process_single_image(
                     "severity_counts": severity_counts,
                     "total_defects": total_defects,
                     "inspection_status": inspection_status,
-                    "result_image_path": str(result_image_path)
-                    if result_image_path
-                    else None,
+                    "annotated_image": annotated_image,
                 },
             )
+
+        result_image_path, _ = save_result_visualization(
+            annotated_image, save_image, result_session_dir, req_base_filename
+        )
+        if result_image_path:
+            result_image_url = (
+                "/results/" + result_image_path.relative_to(RESULTS_DIR).as_posix()
+            )
+        else:
+            result_image_url = None
 
         stats_map = build_defect_stats(detections)
 

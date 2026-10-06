@@ -125,16 +125,29 @@ def build_detections(results, class_names, defect_info: dict):
     return detections, severity_counts
 
 
+def encode_visualization(results) -> bytes | None:
+    """Encodes the plotted detection image to JPEG bytes so it can be cached and
+    written into the session folder of the current inspection."""
+    if not results:
+        return None
+
+    ok, buffer = cv2.imencode(".jpg", results[0].plot())
+    if not ok:
+        return None
+
+    return buffer.tobytes()
+
+
 def save_result_visualization(
-    results, detections: list, save_image: bool, results_dir: Path, base_filename: str
+    image_bytes: bytes | None, save_image: bool, results_dir: Path, base_filename: str
 ):
-    if not save_image or not detections:
+    if not save_image or not image_bytes:
         return None, None
 
-    result_img = results[0].plot()
+    results_dir.mkdir(parents=True, exist_ok=True)
     result_filename = f"result_{base_filename}.jpg"
     result_path = results_dir / result_filename
-    cv2.imwrite(str(result_path), result_img)
+    result_path.write_bytes(image_bytes)
 
     return result_path, f"/results/{result_filename}"
 
