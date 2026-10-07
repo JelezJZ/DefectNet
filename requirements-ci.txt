@@ -1,0 +1,43 @@
+# Minimal dependency set for CI: runtime + tests only.
+#
+# torch / torchvision are intentionally NOT listed here — they are installed in
+# a separate CI step from the CPU wheel index, otherwise pip pulls the CUDA
+# build (~3 GB of nvidia-* wheels) that CI does not need:
+#
+#   pip install --index-url https://download.pytorch.org/whl/cpu torch==2.10.0 torchvision==0.25.0
+#
+# Versions mirror requirements.txt so CI exercises the same stack as production.
+
+# --- web ---
+fastapi==0.135.1
+starlette==0.52.1
+uvicorn==0.41.0
+pydantic==2.12.5
+python-multipart==0.0.22
+python-dotenv==1.2.2
+python-jose==3.5.0
+email-validator==2.3.0
+bcrypt==5.0.0
+websockets==16.0
+
+# --- database ---
+SQLAlchemy==2.0.48
+psycopg2-binary==2.9.12
+alembic==1.18.5
+
+# --- tasks ---
+celery==5.6.2
+redis==8.0.1
+
+# --- ml / cv ---
+ultralytics==8.4.19
+numpy==2.4.2
+opencv-python==4.13.0.92
+Pillow==12.1.1
+
+# --- reports ---
+reportlab==4.4.10
+
+# --- tests ---
+pytest==9.0.3
+httpx==0.28.1

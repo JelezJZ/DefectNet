@@ -1,0 +1,157 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install ruff
+        run: pip install ruff==0.16.10
+
+      - name: Ruff
+        run: ruff check --select E9,F63,F7,F82 src tests
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: lint
+
+    services:
+      db:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: defectnet
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      # src/database/database.py builds the DSN from DB_* only (DATABASE_URL is unused)
+      DB_DRIVER: postgresql+psycopg2
+      DB_HOST: localhost
+      DB_PORT: '5432'
+      DB_USER: postgres
+      DB_PASS: postgres
+      DB_NAME: defectnet
+      # redis is started as a normal service on the runner
+      CELERY_BROKER_URL: redis://localhost:6379/0
+      CELERY_RESULT_BACKEND: redis://localhost:6379/0
+      JWT_SECRET_KEY: ci-only-not-a-production-secret
+      MODEL_PATH: models/trained/pcb_defect_detector_v13_best.pt
+      STORAGE_DIR: storage
+      UPLOAD_DIR: storage/uploads
+      RESULTS_DIR: storage/results
+      # test_too_large_image expects a 11 MB upload to be rejected
+      MAX_UPLOAD_SIZE_MB: '10'
+      # make `src` importable for every invocation (there is no .env in CI)
+      PYTHONPATH: .
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: requirements-ci.txt
+
+      - name: System libraries for OpenCV
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgl1 libglib2.0-0
+
+      - name: Install PyTorch (CPU build)
+        run: pip install --index-url https://download.pytorch.org/whl/cpu torch==2.10.0 torchvision==0.25.0
+
+      - name: Install dependencies
+        run: pip install -r requirements-ci.txt
+
+      # Weights (*.pt) and test images are gitignored, so they come from the
+      # "ci-assets" release of this repository.
+      - name: Download model weights and test fixtures
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p models/trained datasets /tmp/ci-assets
+          if ! gh release download ci-assets --repo "$GITHUB_REPOSITORY" \
+                 --dir /tmp/ci-assets --pattern '*.pt' --pattern 'test_image*.jpg'; then
+            echo "::error::Release 'ci-assets' not found. Create it once:"
+            echo "  gh release create ci-assets --repo $GITHUB_REPOSITORY \\"
+            echo "    models/trained/pcb_defect_detector_v13_best.pt \\"
+            echo "    datasets/test_image.jpg datasets/test_image_2.jpg datasets/test_image_3.jpg"
+            exit 1
+          fi
+          mv /tmp/ci-assets/pcb_defect_detector_v13_best.pt models/trained/
+          mv /tmp/ci-assets/test_image*.jpg datasets/
+          test -f datasets/test_image.jpg
+          ls -la models/trained datasets/test_image*.jpg
+
+      - name: Apply database migrations
+        run: alembic upgrade head
+
+      - name: Start Celery worker
+        run: |
+          set -o pipefail
+          celery -A src.tasks.celery_config.celery_app worker \
+            --loglevel=INFO --pool=solo > worker.log 2>&1 &
+          for i in $(seq 1 30); do
+            if celery -A src.tasks.celery_config.celery_app inspect ping 2>/dev/null | grep -q pong; then
+              echo "worker is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Celery worker did not start"
+          cat worker.log
+          exit 1
+
+      - name: Run tests
+        run: python -m pytest tests/ -q --junitxml=report.xml
+
+      - name: Worker log on failure
+        if: failure()
+        run: cat worker.log || true
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-report
+          path: report.xml
