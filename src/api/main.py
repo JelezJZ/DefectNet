@@ -38,8 +38,8 @@ STORAGE_DIR = BASE_DIR / os.getenv("STORAGE_DIR", "storage")
 UPLOAD_DIR = BASE_DIR / os.getenv("UPLOAD_DIR", "storage/uploads")
 RESULTS_DIR = BASE_DIR / os.getenv("RESULTS_DIR", "storage/results")
 
-UPLOAD_DIR.mkdir(exist_ok=True)
-RESULTS_DIR.mkdir(exist_ok=True)
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 model = None
 model_cache = {}
